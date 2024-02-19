@@ -209,8 +209,7 @@ export async function addContent(type, id, content, skipEvents) {
   const sequenceNumber = existingContent?.sequenceNumber ? existingContent?.sequenceNumber + 1 : 1;
   content.updated = content.updated || new Date().toISOString();
   contentByType[type][id] = { sequenceNumber, content };
-
-  if (!skipEvents) await sendEvent(type, id, "published");
+  if (!skipEvents && pubSubListener) await sendEvent(type, id, "published");
 }
 
 async function sendEvent(type, id, event) {
