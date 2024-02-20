@@ -7,9 +7,13 @@ import * as fakeToolApi from "../index.js";
 const baseUrl = "https://fake-tool-api-test";
 describe("Fake tool api", () => {
 
+  const events = [];
   beforeEach(() => {
-    fakeToolApi.init(baseUrl);
+    fakeToolApi.init(baseUrl, (msg) => {
+      events.push(JSON.parse(msg.data));
+    });
     fakeToolApi.addType("article");
+    events.length = 0;
   });
   const id = randomUUID();
   describe("#addContent", () => {
@@ -22,19 +26,11 @@ describe("Fake tool api", () => {
     });
 
     it("should notify registered pubsub-listener for each change", () => {
-      const events = [];
-      fakeToolApi.listenToPubsub((msg) => {
-        events.push(msg);
-      });
       fakeToolApi.addContent("article", id, { headline: "Event?" });
       expect(events).to.eql([ { event: "published", id, type: "article" } ]);
     });
 
     it("should not notify registered pubsub-listener if skipEvents param is supplied", () => {
-      const events = [];
-      fakeToolApi.listenToPubsub((msg) => {
-        events.push(msg);
-      });
       fakeToolApi.addContent("article", id, { headline: "Event?" }, true);
       expect(events).to.eql([]);
     });
@@ -69,10 +65,6 @@ describe("Fake tool api", () => {
     });
 
     it("should notify registered pubsub-listener for each change", async () => {
-      const events = [];
-      fakeToolApi.listenToPubsub((msg) => {
-        events.push(msg);
-      });
       await putJson(`${baseUrl}/article/${id}`, { headline: "Event?" });
       expect(events).to.eql([ { event: "published", id, type: "article" } ]);
     });

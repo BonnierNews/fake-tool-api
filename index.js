@@ -12,7 +12,8 @@ const mgetPathsRegex = /^\/slugs\/byValues$/;
 let interceptor = null;
 
 let pubSubListener;
-export function init(toolApiBaseUrl) { // todo rename
+export function init(toolApiBaseUrl, listener) {
+  pubSubListener = listener;
   clear();
   const mock = nock(toolApiBaseUrl);
   mock
@@ -39,10 +40,6 @@ export function init(toolApiBaseUrl) { // todo rename
     .delete(singleContentRegex)
     .reply(interceptable(deleteContent))
     .persist();
-}
-
-export function listenToPubsub(listener) {
-  pubSubListener = listener;
 }
 
 export function intercept(interceptFn) {
@@ -274,7 +271,14 @@ function deleteContent(url) {
 }
 
 async function sendEvent(type, id, event) {
-
-  const message = { event, type, id };
+  const message = {
+    id,
+    data: Buffer.from(JSON.stringify({
+      event,
+      type,
+      id,
+    })),
+    attributes: {},
+  };
   await pubSubListener(message);
 }
