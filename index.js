@@ -9,15 +9,11 @@ const uuidRegex =
 const getPathsRegex = /^\/slug\/byValue\/([\w-]+)$/;
 const mgetPathsRegex = /^\/slugs\/byValues$/;
 
-let interceptor = () => {};
-
-export function intercept(interceptFn) {
-  interceptor = interceptFn;
-}
+let interceptor = null;
 
 let pubSubListener;
-export function init(toolApiBaseUrl, listener) {
-  pubSubListener = listener;
+export function init(toolApiBaseUrl) { // todo rename
+  clear();
   const mock = nock(toolApiBaseUrl);
   mock
     .get("/types")
@@ -33,6 +29,10 @@ export function init(toolApiBaseUrl, listener) {
     .post(mgetPathsRegex)
     .reply(interceptable(mgetPaths))
     .persist()
+    .post("/slug") // todo collisionresolver
+    .query(true)
+    .reply(interceptable(postPath))
+    .persist()
     .put(singleContentRegex)
     .reply(interceptable(put))
     .persist()
@@ -41,9 +41,66 @@ export function init(toolApiBaseUrl, listener) {
     .persist();
 }
 
+export function listenToPubsub(listener) {
+  pubSubListener = listener;
+}
+
+export function intercept(interceptFn) {
+  interceptor = interceptFn;
+}
+export async function addContent(type, id, content, skipEvents) {
+  addType(type);
+
+  const existingContent = contentByType[type][id];
+  const sequenceNumber = existingContent?.sequenceNumber ? existingContent?.sequenceNumber + 1 : 1;
+  content.updated = content.updated || new Date().toISOString();
+  contentByType[type][id] = { sequenceNumber, content };
+  if (!skipEvents && pubSubListener) await sendEvent(type, id, "published");
+}
+
+export function addPath(path) {
+  if (path.channels) {
+    throw new Error("slug.channels is deprecated, use slug.channel instead");
+  }
+  if (!path.publishTime) {
+    path.publishTime = new Date();
+  }
+  paths.push(path);
+}
+
+export function removePath(path) {
+  paths = paths.filter((p) => !(p.channel === path.channelId && p.value === path.value && p.path === path.path));
+}
+
+export async function removeContent(type, id) {
+  delete contentByType[type][id];
+  await sendEvent(type, id, "unpublished");
+}
+
+export function addType(type) {
+  if (!contentByType[type]) {
+    contentByType[type] = {};
+  }
+}
+
+export function peekContent(type, id) {
+  return contentByType[type]?.[id];
+}
+
+export function peekPaths() {
+  return paths;
+}
+
+export function clear() {
+  contentByType = {};
+  paths.length = 0;
+  interceptor = null;
+}
+
 function interceptable(fn) {
   return function () {
-    const intercepted = interceptor(this.method, ...arguments);
+    const interceptorFn = interceptor || (() => {});
+    const intercepted = interceptorFn(this.method, ...arguments);
     if (intercepted) return intercepted;
     return fn.apply(this, arguments);
   };
@@ -124,6 +181,7 @@ function list(url) {
 }
 
 function get(url) {
+
   const matches = url.match(singleContentRegex);
   const [ , type, id ] = matches || [];
   if (!id.match(uuidRegex)) {
@@ -170,7 +228,20 @@ function mgetPaths(url, body) {
   return [ 200, response ];
 }
 
+function postPath(url, body) {
+  const { channel, value, valueType, publishTime } = body;
+  paths.push({
+    path: body.desiredPath,
+    channel,
+    value,
+    valueType,
+    publishTime,
+  });
+  return [ 200, "OK" ];
+}
+
 function put(url, body) {
+
   const matches = url.match(singleContentRegex);
   const [ , type, id ] = matches || [];
   if (!id.match(uuidRegex)) {
@@ -181,7 +252,7 @@ function put(url, body) {
     return [ 404 ];
   }
 
-  ofType[id] = body;
+  addContent(type, id, body);
 
   return [ 200, body ];
 }
@@ -202,57 +273,8 @@ function deleteContent(url) {
   return [ 200 ];
 }
 
-export async function addContent(type, id, content, skipEvents) {
-  addType(type);
-
-  const existingContent = contentByType[type][id];
-  const sequenceNumber = existingContent?.sequenceNumber ? existingContent?.sequenceNumber + 1 : 1;
-  content.updated = content.updated || new Date().toISOString();
-  contentByType[type][id] = { sequenceNumber, content };
-  if (!skipEvents && pubSubListener) await sendEvent(type, id, "published");
-}
-
 async function sendEvent(type, id, event) {
 
-  const message = {
-    id,
-    data: Buffer.from(JSON.stringify({
-      event,
-      type,
-      id,
-      // url: `${config.toolApi.baseUrl}/${type}/${id}`,
-    })),
-    attributes: {},
-  };
+  const message = { event, type, id };
   await pubSubListener(message);
-}
-
-export function addPath(path) {
-  if (path.channels) {
-    throw new Error("slug.channels is deprecated, use slug.channel instead");
-  }
-  if (!path.publishTime) {
-    path.publishTime = new Date();
-  }
-  paths.push(path);
-}
-
-export function removePath(path) {
-  paths = paths.filter((p) => !(p.channel === path.channelId && p.value === path.value && p.path === path.path));
-}
-
-export async function removeContent(type, id) {
-  delete contentByType[type][id];
-  await sendEvent(type, id, "unpublished");
-}
-
-export function addType(type) {
-  if (!contentByType[type]) {
-    contentByType[type] = {};
-  }
-}
-
-export function clear() {
-  contentByType = {};
-  paths.length = 0;
 }

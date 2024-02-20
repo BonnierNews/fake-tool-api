@@ -9,11 +9,19 @@
     "bugs": {
         "url": "https://github.com/BonnierNews/fake-tool-api/issues"
     },
+    "scripts": {
+        "test": "mocha test"
+    },
     "license": "MIT",
-    "files": ["index.js"],
+    "files": [
+        "index.js"
+    ],
     "devDependencies": {
         "@bonniernews/eslint-config": "^1.1.0",
-        "eslint": "^8.56.0"
+        "chai": "^5.1.0",
+        "eslint": "^8.56.0",
+        "mocha": "^10.3.0",
+        "node-fetch": "^3.3.2"
     },
     "dependencies": {
         "nock": "^13.5.3"
