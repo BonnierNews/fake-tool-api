@@ -473,7 +473,7 @@ function putContent(url, body) {
   if (types[type].versioned) {
     storeVersion(type, id, ofType[id]);
   }
-
+  sendEvent(type, id, "published");
   return [ 200, storedObject, { "sequence-number": parsedSequenceNumber + 1 } ];
 }
 

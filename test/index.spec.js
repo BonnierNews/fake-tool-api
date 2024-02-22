@@ -12,7 +12,7 @@ describe("Fake tool api", () => {
     fakeToolApi.init(baseUrl, (msg) => {
       events.push(JSON.parse(msg.data));
     });
-    fakeToolApi.addType("article");
+    fakeToolApi.addType({ name: "article" });
     events.length = 0;
   });
   const id = randomUUID();
@@ -58,9 +58,9 @@ describe("Fake tool api", () => {
     it("should increase version number for each updatde", async () => {
       await putJson(`${baseUrl}/article/${id}`, { headline: "Blah" });
       expect(fakeToolApi.peekContent("article", id).sequenceNumber).to.eql(1);
-      await putJson(`${baseUrl}/article/${id}`, { headline: "Blah 2" });
+      await putJson(`${baseUrl}/article/${id}?ifSequenceNumber=1`, { headline: "Blah 2" });
       expect(fakeToolApi.peekContent("article", id).sequenceNumber).to.eql(2);
-      await putJson(`${baseUrl}/article/${id}`, { headline: "Blah 3" });
+      await putJson(`${baseUrl}/article/${id}?ifSequenceNumber=2`, { headline: "Blah 3" });
       expect(fakeToolApi.peekContent("article", id).sequenceNumber).to.eql(3);
     });
 
