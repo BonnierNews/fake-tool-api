@@ -2,7 +2,7 @@ import nock from "nock";
 import { randomUUID } from "crypto";
 
 let types, contentByType, slugs = [], versionsMeta = {}, versions = {}, baseUrl;
-const listRegex = /^\/([\w-]+)\/all(\?.*)?/;
+const listRegex = /^\/*([\w-]+)?\/all(.*)$/;
 const slugsRegex = /^\/slugs(\?.*)?/;
 const getSlugRegex = /^\/slug\/([\w-]+)/;
 const getSlugByValueRegex = /^\/slug\/byValue\/([\w-]+)/;
@@ -22,7 +22,6 @@ export function intercept(interceptFn) {
 
 let pubSubListener = null;
 export function init(url, listener) {
-  // console.log("- - - INIT");
 
   baseUrl = url;
   pubSubListener = listener;
@@ -69,14 +68,9 @@ export function init(url, listener) {
     .get("/types")
     .reply(interceptable(getTypes))
     .persist();
-
-  // mock.on("request", (req, interceptor, body) => console.log("- - - REQUEST", req.options.href));
-  // mock.on("replied", (req, interceptor) => console.log("- - - REPLIED", req.options.href, req.res.statusCode));
 }
 
 export function reset() {
-  // console.log("- - - RESET");
-
   initBasetypes();
   slugs = [];
   interceptor = () => {};
@@ -89,7 +83,6 @@ export function clearAllTypes() {
 }
 
 export async function addContent(type, id, content, skipEvents) {
-
   if (!contentByType[type]) {
     contentByType[type] = {};
   }
@@ -111,6 +104,7 @@ export function addSlug(slug) {
   }
   slugs.push(slug);
 }
+
 export function removeSlug(slug) {
   slugs = slugs.filter((p) => !(
     p.channel === slug.channel
@@ -118,8 +112,6 @@ export function removeSlug(slug) {
     && p.path === slug.path));
 }
 export function addType(type) {
-  // console.log("- - - ADD", type.name);
-
   if (!type.properties) {
     type.properties = {};
   }
@@ -130,7 +122,6 @@ export function addType(type) {
   if (!contentByType[type.name]) {
     contentByType[type.name] = {};
   }
-  // console.log("- - - REALLY ADD", Object.values(types).map((t) => t.name));
 }
 
 export function peekContent(type, id) {
@@ -142,7 +133,6 @@ export function peekSlugs() {
 }
 
 async function sendEvent(type, id, event) {
-
   if (!pubSubListener) return;
   const message = {
     id,
@@ -150,31 +140,33 @@ async function sendEvent(type, id, event) {
       event,
       type,
       id,
+      updated: new Date(),
     })),
     attributes: {},
   };
   await pubSubListener(message);
 }
-//
-// function getArticle(url) {
-//
-//   const [ , id ] = url.match(getArticleRegex) || [];
-//   let targetTypeById;
-//
-//   Object.keys(contentByType).forEach((type) => {
-//     targetTypeById = contentByType[type][id];
-//   });
-//   return [ 200, { ...targetTypeById } ];
-// }
 
 function list(url) {
-  // const listRegex = /^\/([\w-]+)\/all(\?.*)?/;
   const [ , type, query ] = url.match(listRegex) || [];
   const queryParams = new URLSearchParams(query);
   const parent = queryParams.get("parent");
-  const ofType = contentByType[type];
-  if (!ofType) {
-    return [ 404 ];
+  let ofType;
+  if (type) {
+    ofType = contentByType[type];
+    if (!ofType) {
+      return [ 404 ];
+    }
+  } else {
+    ofType = Object.keys(contentByType).reduce((acc, t) => {
+      return { ...acc, ...contentByType[t] };
+    }, {});
+  }
+  const typeByContentId = {};
+  for (const [ t, contentById ] of Object.entries(contentByType)) {
+    for (const contentId of Object.keys(contentById)) {
+      typeByContentId[contentId] = t;
+    }
   }
 
   let items;
@@ -183,13 +175,14 @@ function list(url) {
       items = Object.keys(ofType).map((id) => {
         return {
           id,
+          type: typeByContentId[id],
           content: ofType[id],
         };
       }).filter(({ content }) => !content.attributes.parent);
     } else {
       items = Object.keys(ofType).map((id) => {
         if (ofType[id].attributes.parent === parent) {
-          return { id, content: ofType[id] };
+          return { id, content: ofType[id], type: ofType[id].type };
         }
       }).filter(Boolean);
     }
@@ -200,6 +193,7 @@ function list(url) {
     items = Object.keys(ofType).map((id) => {
       return {
         id,
+        type: typeByContentId[id],
         content: ofType[id],
       };
     });
@@ -231,8 +225,23 @@ function list(url) {
       if (item.content.attributes.firstPublishTime && new Date(item.content.attributes.firstPublishTime) > new Date()) {
         return false;
       }
+      if (item.content.publishedState && item.content.publishedState !== "PUBLISHED") {
+        return false;
+      }
       return true;
     });
+  }
+
+  const excludeFromPublishingEvents = queryParams.get("excludeFromPublishingEvents");
+  if (excludeFromPublishingEvents === "true") {
+    const excludeTypes = Object.values(types).filter((t) => t.excludeFromPublishingEvents).map((td) => td.name);
+    items = items.filter((item) => {
+      return excludeTypes.indexOf(item.type) === -1;
+    });
+  }
+  const filterTypes = queryParams.getAll("type");
+  if (filterTypes.length > 0) {
+    items = items.filter((item) => filterTypes.includes(item.type));
   }
 
   const orgLength = items.length;
@@ -264,9 +273,7 @@ function list(url) {
     nextUrl = nextUrlObj.toString();
 
   }
-
   responseItems = JSON.parse(JSON.stringify(responseItems));
-
   responseItems.forEach((item) => {
     item.sequenceNumber = item.content.sequenceNumber;
     delete item.content.sequenceNumber;
@@ -295,7 +302,6 @@ function requestSlug(url, body) {
   }
 
   slugs.push(body);
-
   const responseObject = {
     ids: [ body.id ],
     path: body.path,
@@ -310,7 +316,6 @@ function filterSlugsByValue(url) {
 }
 
 function filterSlugsByValues(url, body) {
-
   if (!body.values) {
     return [ 400 ];
   }
@@ -318,68 +323,53 @@ function filterSlugsByValues(url, body) {
   body.values.forEach((value) => {
     response[value] = [];
   });
-
   slugs.forEach((slug) => {
     if (body.values.indexOf(slug.value) !== -1) {
       response[slug.value].push(slug);
     }
   });
-
   return [ 200, response ];
 }
 
 function getSlug(url) {
   const [ , id ] = url.match(getSlugRegex) || [];
-
   const slug = slugs.find((s) => s.id === id);
-
   if (!slug) {
     return [ 404 ];
   }
-
   return [ 200, slug ];
 }
 
 function deleteSlug(url) {
   const [ , id ] = url.match(getSlugRegex) || [];
-
   const slug = slugs.find((s) => s.id === id);
-
   if (!slug) {
     return [ 404 ];
   }
-
   slugs.splice(slugs.indexOf(slug), 1);
-
   return [ 200 ];
 }
 
 function slugsList(url) {
   const [ , query ] = url.match(slugsRegex) || [];
   const queryParams = new URLSearchParams(query);
-
   let items = slugs;
-
   const channel = queryParams.get("channel");
   if (channel) {
     items = items.filter((item) => item.channel === channel);
   }
-
   const path = queryParams.get("path");
   if (path) {
     items = items.filter((item) => item.path === path);
   }
-
   const valueType = queryParams.get("valueType");
   if (valueType) {
     items = items.filter((item) => item.valueType === valueType);
   }
-
   const value = queryParams.get("value");
   if (value) {
     items = items.filter((item) => item.value === value);
   }
-
   const responseBody = { items/* , next*/ };
   return [ 200, responseBody ];
 }
@@ -425,12 +415,10 @@ function getContent(url) {
   if (!content) {
     return [ 404 ];
   }
-
   return [ 200, content, { "sequence-number": ofType[id].sequenceNumber } ];
 }
 
 function interceptable(fn) {
-
   return function () {
     const intercepted = interceptor(this.method, ...arguments);
     if (intercepted) return intercepted;
@@ -443,16 +431,13 @@ function putContent(url, body) {
   const matches = url.match(putContentRegex);
   const [ , type, id, query ] = matches || [];
   const qs = new URLSearchParams(query);
-
   if (!id.match(uuidRegex)) {
     return [ 400 ];
   }
-
   const ofType = contentByType[type];
   if (!ofType) {
     return [ 404 ];
   }
-
   let parsedSequenceNumber = 0;
   const sequenceNumber = qs.get("ifSequenceNumber");
   if (sequenceNumber !== null) {
@@ -461,10 +446,8 @@ function putContent(url, body) {
       return [ 409 ];
     }
   }
-
   const storedObject = JSON.parse(JSON.stringify(body));
   const now = new Date().toISOString();
-
   storedObject.updated = new Date().toISOString();
   if (!ofType[id]) {
     storedObject.created = now;
@@ -487,22 +470,17 @@ async function deleteContent(url) {
   if (!ofType) {
     return [ 404 ];
   }
-
   delete contentByType[type][id];
   await sendEvent(type, id, "unpublished");
-
   return [ 200 ];
 }
 
 function getTypes() {
-  // console.log("- - - TYPES", Object.values(types).map((t) => t.name));
-
   return [ 200, Object.values(types) ];
 }
 
 function initBasetypes() {
   contentByType = { channel: {}, "publishing-group": {} };
-
   types = {};
   addType({
     name: "channel",
@@ -512,7 +490,6 @@ function initBasetypes() {
     name: "publishing-group",
     properties: { attributes: { type: "object", properties: { name: { type: "string" } } } },
   });
-  // todo maybe not here
   addType({
     name: "article",
     properties: { attributes: { type: "object", properties: { headline: { type: "string" } } } },
@@ -522,13 +499,10 @@ function initBasetypes() {
 function mapType(type) {
   type.title = type.title || type.name;
   type.pluralTitle = type.pluralTitle || type.title;
-
   addStandardProperties(type);
   addTypeSpecificProperties(type);
-
   type.ui = type.ui || {};
   type.ui.displayProperty = type.ui.displayProperty || "attributes.name";
-
   return type;
 }
 
@@ -585,7 +559,6 @@ function addTypeSpecificProperties(type) {
       type: "reference",
       referenceType: "publishing-group",
       ui: { hidden: true },
-      // required: true,
     };
   }
 
