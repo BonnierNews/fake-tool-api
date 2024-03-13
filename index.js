@@ -15,17 +15,21 @@ const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[
 const versionsRegex = /^\/([\w-]+)\/([\w-]+)\/versions$/;
 const versionRegex = /^\/([\w-]+)\/([\w-]+)\/versions\/\d+$/;
 let interceptor = () => {};
-
-export function intercept(interceptFn) {
-  interceptor = interceptFn || (() => {});
+export function init(url, pubSubListenerArg) {
+  initNock(url);
+  initPubsub(pubSubListenerArg);
+  resetContent();
 }
 
 let pubSubListener = null;
-export function init(url, listener) {
+export function initPubsub(listener) {
+  pubSubListener = listener;
+}
+
+// Sets nock listeners and basic types (channel, publishingGroup, tag and article)
+export function initNock(url) {
 
   baseUrl = url;
-  pubSubListener = listener;
-  reset();
   const mock = nock(url);
   mock
     .get(listRegex)
@@ -70,7 +74,12 @@ export function init(url, listener) {
     .persist();
 }
 
-export function reset() {
+export function intercept(interceptFn) {
+  interceptor = interceptFn || (() => {});
+}
+
+// resets content an initialize basic types ()
+export function resetContent() {
   initBasetypes();
   slugs = [];
   interceptor = () => {};
@@ -78,7 +87,8 @@ export function reset() {
   versions = {};
 }
 
-export function clearAllTypes() {
+// Removes all base types (needed for a few very generic tests)
+export function clearBaseTypes() {
   types = {};
 }
 
