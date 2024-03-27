@@ -125,6 +125,25 @@ describe("Fake tool api", () => {
       expect(content1Hit.content).to.have.property("attributes");
       expect(content1Hit.content.attributes).to.have.property("name", "banana");
     });
+
+    it("should support filtering by type", async () => {
+      const channelId = randomUUID();
+      fakeToolApi.addContent("channel", channelId, { attributes: { name: "name" } });
+      const publishingGroupId = randomUUID();
+      fakeToolApi.addContent("publishing-group", publishingGroupId, { attributes: { name: "name" } });
+      const articleId = randomUUID();
+      fakeToolApi.addContent("article", articleId, { attributes: { name: "name" } });
+
+      const response = await postJson(`${baseUrl}/search`, { types: [ "publishing-group", "channel" ] });
+      const responseBody = await response.json();
+
+      expect(response.status).to.eql(200);
+      expect(responseBody).to.have.property("hits");
+      expect(responseBody.total).to.equal(2);
+      const ids = responseBody.hits.map((hit) => hit.id);
+      expect(ids).to.include(publishingGroupId);
+      expect(ids).to.include(channelId);
+    });
   });
 });
 

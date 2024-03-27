@@ -490,6 +490,9 @@ async function deleteContent(url) {
 
 function search(url, body) {
   let matchingContent = Object.keys(contentByType).flatMap((typeName) => {
+    if (body.types && !body.types.includes(typeName)) {
+      return [];
+    }
     const ofType = contentByType[typeName];
     const ids = Object.keys(ofType);
 
