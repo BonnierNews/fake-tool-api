@@ -69,6 +69,9 @@ export function initNock(url) {
     .delete(singleContentRegex)
     .reply(interceptable(deleteContent))
     .persist()
+    .post("/search")
+    .reply(interceptable(search))
+    .persist()
     .get("/types")
     .reply(interceptable(getTypes))
     .persist();
@@ -96,7 +99,7 @@ export async function addContent(type, id, content, skipEvents) {
   if (!contentByType[type]) {
     contentByType[type] = {};
   }
-  contentByType[type][id] = { updated: new Date().toISOString(), ...content, sequenceNumber: 1 };
+  contentByType[type][id] = { created: new Date().toISOString(), updated: new Date().toISOString(), ...content, sequenceNumber: 1 };
   if (types[type]?.versioned) {
     storeVersion(type, id, { ...contentByType[type][id], updated: new Date().toISOString() });
   }
@@ -485,6 +488,36 @@ async function deleteContent(url) {
   return [ 200 ];
 }
 
+function search(url, body) {
+  let matchingContent = Object.keys(contentByType).flatMap((typeName) => {
+    const ofType = contentByType[typeName];
+    const ids = Object.keys(ofType);
+
+    return ids.map((id) => {
+      const content = ofType[id];
+      const hit = {
+        type: typeName,
+        id,
+        title: content.attributes?.name,
+      };
+
+      if (body.returnContent) {
+        hit.content = content;
+      }
+
+      return hit;
+    });
+  });
+
+  if (body.q) {
+    matchingContent = matchingContent.filter((potentialHit) => {
+      const titleTokens = (potentialHit.title || "").split(" ").map((t) => t.toLowerCase());
+      return titleTokens.includes(body.q.toLocaleLowerCase());
+    });
+  }
+  return [ 200, { hits: matchingContent, total: matchingContent.length } ];
+}
+
 function getTypes() {
   return [ 200, Object.values(types) ];
 }
@@ -502,7 +535,7 @@ function initBasetypes() {
   });
   addType({
     name: "article",
-    properties: { attributes: { type: "object", properties: { headline: { type: "string" } } } },
+    properties: { attributes: { type: "object", properties: { name: { type: "string" }, headline: { type: "string" } } } },
   });
 }
 
