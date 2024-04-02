@@ -1,6 +1,6 @@
 {
     "name": "@bonniernews/fake-tool-api",
-    "version": "1.0.2",
+    "version": "1.0.3",
     "type": "module",
     "description": "Mocked Bonnier News tool api, for use in automated tests",
     "main": "index.js",
