@@ -144,6 +144,65 @@ describe("Fake tool api", () => {
       expect(ids).to.include(publishingGroupId);
       expect(ids).to.include(channelId);
     });
+
+    it("should support sorting by given text attribute in ascending order", async () => {
+      const content1Id = randomUUID();
+      fakeToolApi.addContent("article", content1Id, { attributes: { name: "banana" } });
+      const content2Id = randomUUID();
+      fakeToolApi.addContent("article", content2Id, { attributes: { name: "apple" } });
+
+      const response = await postJson(`${baseUrl}/search`, { sort: [ { by: "title", order: "asc" } ] });
+      const responseBody = await response.json();
+
+      expect(response.status).to.eql(200);
+      expect(responseBody).to.have.property("hits");
+      expect(responseBody.hits).to.have.length(2);
+
+      expect(responseBody.hits[0].title).to.equal("apple");
+      expect(responseBody.hits[1].title).to.equal("banana");
+    });
+
+    it("should support sorting by given text attribute in descending order", async () => {
+      const content1Id = randomUUID();
+      fakeToolApi.addContent("article", content1Id, { attributes: { name: "apple" } });
+      const content2Id = randomUUID();
+      fakeToolApi.addContent("article", content2Id, { attributes: { name: "banana" } });
+
+      const response = await postJson(`${baseUrl}/search`, { sort: [ { by: "title", order: "desc" } ] });
+      const responseBody = await response.json();
+
+      expect(response.status).to.eql(200);
+      expect(responseBody).to.have.property("hits");
+      expect(responseBody.hits).to.have.length(2);
+
+      expect(responseBody.hits[0].title).to.equal("banana");
+      expect(responseBody.hits[1].title).to.equal("apple");
+    });
+
+    it("should return number of hits based on size parameter", async () => {
+      const content1Id = randomUUID();
+      fakeToolApi.addContent("article", content1Id, { attributes: { name: "apple" } });
+      const content2Id = randomUUID();
+      fakeToolApi.addContent("article", content2Id, { attributes: { name: "banana" } });
+      const response = await postJson(`${baseUrl}/search`, { size: 1 });
+      expect(response.status).to.eql(200);
+      const responseBody = await response.json();
+      expect(responseBody.hits).to.have.length(1);
+      expect(responseBody.hits[0].title).to.equal("apple");
+    });
+
+    it("should support paging through results", async () => {
+      const content1Id = randomUUID();
+      fakeToolApi.addContent("article", content1Id, { attributes: { name: "apple" } });
+      const content2Id = randomUUID();
+      fakeToolApi.addContent("article", content2Id, { attributes: { name: "banana" } });
+      const response = await postJson(`${baseUrl}/search`, { from: 1, size: 1 });
+      expect(response.status).to.eql(200);
+      const responseBody = await response.json();
+      expect(responseBody.hits).to.have.length(1);
+      expect(responseBody.hits[0].title).to.equal("banana");
+    });
+
   });
 });
 
