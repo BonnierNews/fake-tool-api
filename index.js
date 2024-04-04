@@ -496,7 +496,8 @@ function search(url, body) {
     const ofType = contentByType[typeName];
     const ids = Object.keys(ofType);
 
-    const mapped = ids.map((id) => {
+    // const mapped =
+    return ids.map((id) => {
       const content = ofType[id];
       const hit = {
         type: typeName,
@@ -510,30 +511,6 @@ function search(url, body) {
 
       return hit;
     });
-
-    const from = body.from || 0;
-    let size = body.size || mapped.length;
-
-    if (body.from && body.size) {
-      size = body.from + body.size;
-    }
-
-    const sliced = mapped.slice(from, size);
-
-    if (body.sort && Array.isArray(body.sort) && body.sort.length > 0) {
-      sliced.sort((aObj, bObj) => {
-        const a = aObj[body.sort[0].by];
-        const b = bObj[body.sort[0].by];
-        if (typeof a === "string" && typeof b === "string") {
-          if (body.sort[0].order === "asc") {
-            return a.localeCompare(b);
-          }
-          return b.localeCompare(a);
-        }
-      });
-    }
-
-    return sliced;
   });
 
   if (body.q) {
@@ -542,7 +519,28 @@ function search(url, body) {
       return titleTokens.includes(body.q.toLocaleLowerCase());
     });
   }
-  return [ 200, { hits: matchingContent, total: matchingContent.length } ];
+
+  if (body.sort && Array.isArray(body.sort) && body.sort.length > 0) {
+    matchingContent.sort((aObj, bObj) => {
+      const a = aObj[body.sort[0].by];
+      const b = bObj[body.sort[0].by];
+      if (typeof a === "string" && typeof b === "string") {
+        if (body.sort[0].order === "asc") {
+          return a.localeCompare(b);
+        }
+        return b.localeCompare(a);
+      }
+    });
+  }
+
+  const from = body.from || 0;
+  let size = body.size || matchingContent.length;
+
+  if (body.from && body.size) {
+    size = body.from + body.size;
+  }
+
+  return [ 200, { hits: matchingContent.slice(from, size), total: matchingContent.length } ];
 }
 
 function getTypes() {
