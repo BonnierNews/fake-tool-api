@@ -171,11 +171,15 @@ async function sendEvent(type, id, event) {
   await pubSubListener(message);
 }
 
-function putUserSetting(url, body) {
-  const [ , userId, type, key ] = url.match(userSettingRegex) || [];
+export function addUserSetting(userId, type, key, value) {
   userSettings[userId] = userSettings[userId] || {};
   userSettings[userId][type] = userSettings[userId][type] || {};
-  userSettings[userId][type][key] = body;
+  userSettings[userId][type][key] = value;
+}
+
+function putUserSetting(url, body) {
+  const [ , userId, type, key ] = url.match(userSettingRegex) || [];
+  addUserSetting(userId, type, key, body);
   return [ 200, body ];
 }
 

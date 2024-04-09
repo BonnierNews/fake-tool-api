@@ -123,6 +123,17 @@ describe("Fake tool api", () => {
       response = await fetch(url, { method: "DELETE" });
       expect(response.status).to.eql(404);
     });
+
+    it("is supported to add user settings using the module", async () => {
+      const userId = randomUUID();
+      const settings = { a: "b", b: "a" };
+      fakeToolApi.addUserSetting(userId, "my-type", "my-key", settings);
+
+      const crudUrl = `${baseUrl}/user-setting/${userId}/my-type/my-key`;
+      const response = await fetch(crudUrl);
+      const data = await response.json();
+      expect(data).to.eql(settings);
+    });
   });
 
   describe("POST /search", () => {
