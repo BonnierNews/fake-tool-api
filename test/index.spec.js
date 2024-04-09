@@ -76,6 +76,55 @@ describe("Fake tool api", () => {
     });
   });
 
+  describe("user settings", () => {
+    it("should support CRUD routes", async () => {
+      const userId = randomUUID();
+      const settings = { a: "b", b: "a" };
+      const crudUrl = `${baseUrl}/user-setting/${userId}/my-type/my-key`;
+
+      let response = await putJson(crudUrl, settings);
+      let data = await response.json();
+      expect(data).to.eql(settings);
+
+      response = await fetch(crudUrl);
+      data = await response.json();
+      expect(data).to.eql(settings);
+
+      const updatedSetting = { a: "c" };
+      response = await putJson(crudUrl, updatedSetting);
+      data = await response.json();
+      expect(data).to.eql(updatedSetting);
+
+      response = await fetch(crudUrl);
+      data = await response.json();
+      expect(data).to.eql(updatedSetting);
+
+      response = await fetch(crudUrl, { method: "DELETE" });
+      expect(response.status).to.eql(200);
+
+      response = await fetch(crudUrl);
+      expect(response.status).to.eql(404);
+
+      response = await fetch(crudUrl, { method: "DELETE" });
+      expect(response.status).to.eql(404);
+
+      // Never seen type
+      const unseenUserId = randomUUID();
+      let url = `${baseUrl}/user-setting/${unseenUserId}/unseen-type/my-key`;
+      response = await fetch(url);
+      expect(response.status).to.eql(404);
+      response = await fetch(url, { method: "DELETE" });
+      expect(response.status).to.eql(404);
+
+      // Never seen user
+      url = `${baseUrl}/user-setting/${unseenUserId}/unseen-type/my-key`;
+      response = await fetch(url);
+      expect(response.status).to.eql(404);
+      response = await fetch(url, { method: "DELETE" });
+      expect(response.status).to.eql(404);
+    });
+  });
+
   describe("POST /search", () => {
     it("should return unfiltered results when posting empty object", async () => {
       const content1Id = randomUUID();

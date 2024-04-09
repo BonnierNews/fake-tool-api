@@ -1,7 +1,8 @@
 import nock from "nock";
 import { randomUUID } from "crypto";
 
-let types, contentByType, slugs = [], versionsMeta = {}, versions = {}, baseUrl;
+let types, contentByType, userSettings, slugs = [], versionsMeta = {}, versions = {}, baseUrl;
+const userSettingRegex = /^\/user-setting\/([\w-]+)\/([\w-]+)\/([\w-]+)/;
 const listRegex = /^\/*([\w-]+)?\/all(.*)$/;
 const slugsRegex = /^\/slugs(\?.*)?/;
 const getSlugRegex = /^\/slug\/([\w-]+)/;
@@ -32,6 +33,15 @@ export function initNock(url) {
   baseUrl = url;
   const mock = nock(url);
   mock
+    .put(userSettingRegex)
+    .reply(interceptable(putUserSetting))
+    .persist()
+    .get(userSettingRegex)
+    .reply(interceptable(getUserSetting))
+    .persist()
+    .delete(userSettingRegex)
+    .reply(interceptable(deleteUserSetting))
+    .persist()
     .get(listRegex)
     .reply(interceptable(list))
     .persist()
@@ -88,6 +98,7 @@ export function resetContent() {
   interceptor = () => {};
   versionsMeta = {};
   versions = {};
+  userSettings = {};
 }
 
 // Removes all base types (needed for a few very generic tests)
@@ -158,6 +169,33 @@ async function sendEvent(type, id, event) {
     attributes: {},
   };
   await pubSubListener(message);
+}
+
+function putUserSetting(url, body) {
+  const [ , userId, type, key ] = url.match(userSettingRegex) || [];
+  userSettings[userId] = userSettings[userId] || {};
+  userSettings[userId][type] = userSettings[userId][type] || {};
+  userSettings[userId][type][key] = body;
+  return [ 200, body ];
+}
+
+function getUserSetting(url) {
+  const [ , userId, type, key ] = url.match(userSettingRegex) || [];
+  const found = userSettings[userId]?.[type]?.[key];
+  if (!found) {
+    return [ 404 ];
+  }
+
+  return [ 200, found ];
+}
+
+function deleteUserSetting(url) {
+  const [ , userId, type, key ] = url.match(userSettingRegex) || [];
+  if (!userSettings[userId]?.[type]?.[key]) {
+    return [ 404 ];
+  }
+  delete userSettings[userId][type][key];
+  return [ 200 ];
 }
 
 function list(url) {
