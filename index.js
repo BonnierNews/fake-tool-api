@@ -291,10 +291,10 @@ function list(url) {
   if (activeState) {
     items = items.filter((item) => {
       if (activeState === "active") {
-        return item.active;
+        return item.content.active;
       }
       if (activeState === "inactive") {
-        return !item.active;
+        return !item.content.active;
       }
     });
   }
