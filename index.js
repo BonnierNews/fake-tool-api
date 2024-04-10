@@ -287,6 +287,17 @@ function list(url) {
     });
   }
 
+  const activeState = queryParams.get("activeState");
+  if (activeState) {
+    items = items.filter((item) => {
+      if (activeState === "active") {
+        return item.active;
+      }
+      if (activeState === "inactive") {
+        return !item.active;
+      }
+    });
+  }
   const excludeFromPublishingEvents = queryParams.get("excludeFromPublishingEvents");
   if (excludeFromPublishingEvents === "true") {
     const excludeTypes = Object.values(types).filter((t) => t.excludeFromPublishingEvents).map((td) => td.name);
