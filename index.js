@@ -735,7 +735,7 @@ function addReferencingContent(type, id, referencingItems) {
 
 function getReferencedBy(url) {
   const [ , type, id ] = url.split("/");
-  return [ 200, referencedBy?.[type]?.[id] ];
+  return [ 200, referencedBy[type]?.[id] || [] ];
 }
 
 function getVersion(url) {
