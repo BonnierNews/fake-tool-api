@@ -1,7 +1,7 @@
 import nock from "nock";
 import { randomUUID } from "crypto";
 
-let types, contentByType, userSettings, slugs = [], versionsMeta = {}, versions = {}, baseUrl;
+let types, contentByType, userSettings, slugs = [], versionsMeta = {}, versions = {}, referencedBy = {}, baseUrl;
 const userSettingRegex = /^\/user-setting\/([\w-]+)\/([\w-]+)\/([\w-]+)/;
 const listRegex = /^\/*([\w-]+)?\/all(.*)$/;
 const slugsRegex = /^\/slugs(\?.*)?/;
@@ -14,8 +14,9 @@ const singleContentRegex = /^\/([\w-]+)\/([\w-]+)$/;
 const putContentRegex = /^\/([\w-]+)\/([\w-]+)\??([^&]*)$/;
 const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const versionsRegex = /^\/([\w-]+)\/([\w-]+)\/versions$/;
+const referencedByRegex = /^\/([\w-]+)\/([\w-]+)\/referenced-by$/;
 const versionRegex = /^\/([\w-]+)\/([\w-]+)\/versions\/\d+$/;
-let interceptor = () => {};
+let interceptor = () => { };
 export function init(url, pubSubListenerArg) {
   initNock(url);
   initPubsub(pubSubListenerArg);
@@ -35,69 +36,57 @@ export function initNock(url) {
   mock
     .put(userSettingRegex)
     .reply(interceptable(putUserSetting))
-    .persist()
     .get(userSettingRegex)
     .reply(interceptable(getUserSetting))
-    .persist()
     .delete(userSettingRegex)
     .reply(interceptable(deleteUserSetting))
-    .persist()
     .get(listRegex)
     .reply(interceptable(list))
-    .persist()
     .get(slugsRegex)
     .reply(interceptable(slugsList))
-    .persist()
     .get(getSlugByValueRegex)
     .reply(interceptable(filterSlugsByValue))
-    .persist()
     .post(getSlugsByValuesRegex)
     .reply(interceptable(filterSlugsByValues))
-    .persist()
     .get(getSlugRegex)
     .reply(interceptable(getSlug))
-    .persist()
     .delete(getSlugRegex)
     .reply(interceptable(deleteSlug))
-    .persist()
     .post(postSlugRegex)
     .reply(interceptable(requestSlug))
-    .persist()
     .get(autocompleteRegex)
     .reply(interceptable(autocomplete))
-    .persist()
     .get(versionRegex)
     .reply(interceptable(getVersion))
     .get(versionsRegex)
     .reply(interceptable(getVersions))
+    .get(referencedByRegex)
+    .reply(interceptable(getReferencedBy))
     .get(singleContentRegex)
     .reply(interceptable(getContent))
-    .persist()
     .put(putContentRegex)
     .reply(interceptable(putContent))
-    .persist()
     .delete(singleContentRegex)
     .reply(interceptable(deleteContent))
-    .persist()
     .post("/search")
     .reply(interceptable(search))
-    .persist()
     .get("/types")
     .reply(interceptable(getTypes))
     .persist();
 }
 
 export function intercept(interceptFn) {
-  interceptor = interceptFn || (() => {});
+  interceptor = interceptFn || (() => { });
 }
 
 // resets content an initialize basic types ()
 export function resetContent() {
   initBasetypes();
   slugs = [];
-  interceptor = () => {};
+  interceptor = () => { };
   versionsMeta = {};
   versions = {};
+  referencedBy = {};
   userSettings = {};
 }
 
@@ -114,6 +103,7 @@ export async function addContent(type, id, content, skipEvents) {
   if (types[type]?.versioned) {
     storeVersion(type, id, { ...contentByType[type][id], updated: new Date().toISOString() });
   }
+  addReferencingContent(type, id, [ { id: "123", type: "article" }, { id: "456", type: "article" } ]);
   if (!skipEvents) await sendEvent(type, id, "published");
 }
 
@@ -734,6 +724,18 @@ function storeVersion(type, id, content) {
     publishedBy: "jan.banan@example.com",
   });
   versions[type][id][content.sequenceNumber] = content;
+}
+
+function addReferencingContent(type, id, referencingItems) {
+  if (!referencedBy[type]) {
+    referencedBy[type] = {};
+  }
+  referencedBy[type][id] = referencingItems;
+}
+
+function getReferencedBy(url) {
+  const [ , type, id ] = url.split("/");
+  return [ 200, referencedBy?.[type]?.[id] ];
 }
 
 function getVersion(url) {

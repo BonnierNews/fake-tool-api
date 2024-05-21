@@ -76,6 +76,15 @@ describe("Fake tool api", () => {
     });
   });
 
+  describe("GET /referenced-by", () => {
+    it("should return a shallow list of referensing content", async () => {
+      fakeToolApi.addContent("article", id, { headline: "Hej" });
+      const res = await fetch(`${baseUrl}/article/${id}/referenced-by`, {});
+      const references = await res.json();
+      expect(references.length).to.eql(2);
+    });
+  });
+
   describe("user settings", () => {
     it("should support CRUD routes", async () => {
       const userId = randomUUID();
