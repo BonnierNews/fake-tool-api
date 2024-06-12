@@ -46,6 +46,16 @@ describe("Fake tool api", () => {
       expect(res.status).to.eql(400);
     });
 
+    it("should allow microsoft reserved guids", async () => {
+      // Fourth part of guid starts with a c
+      let res = await putJson(`${baseUrl}/article/c8ada615-4e8b-26fd-cb97-c038bfa6e8e6`, {});
+      expect(res.status).to.eql(200);
+
+      // Fourth part of guid starts with a d
+      res = await putJson(`${baseUrl}/article/c8ada615-4e8b-26fd-db97-c038bfa6e8e6`, {});
+      expect(res.status).to.eql(200);
+    });
+
     it("should reject content of unknown type", async () => {
       const res = await putJson(`${baseUrl}/craZy-stuff/${id}`, {});
       expect(res.status).to.eql(404);
