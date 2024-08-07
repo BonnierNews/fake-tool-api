@@ -649,8 +649,23 @@ function addTypeSpecificProperties(type) {
   if (type.hasPublishedState) {
     type.properties.publishedState = {
       description: "published state",
-      type: "string",
-      enum: [ "DRAFT", "FINISHED", "PUBLISHED", "CANCELED" ],
+      type: "enum",
+      options: [ {
+        value: "DRAFT",
+        label: "DRAFT",
+      },
+      {
+        value: "FINISHED",
+        label: "FINISHED",
+      },
+      {
+        value: "PUBLISHED",
+        label: "PUBLISHED",
+      },
+      {
+        value: "CANCELED",
+        label: "CANCELED",
+      } ],
       required: true,
     };
   }
