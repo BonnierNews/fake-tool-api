@@ -11,6 +11,7 @@ const getSlugsByValuesRegex = /^\/slugs\/byValues$/;
 const postSlugRegex = /^\/slug(\?.*)?/;
 const autocompleteRegex = /^\/([\w-]+)\/autocomplete(.*)$/;
 const singleContentRegex = /^\/([\w-]+)\/([\w-]+)$/;
+const workingCopyRegex = /^\/([\w-]+)\/([\w-]+)\/working-copy$/;
 const putContentRegex = /^\/([\w-]+)\/([\w-]+)\??([^&]*)$/;
 const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89abcd][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const versionsRegex = /^\/([\w-]+)\/([\w-]+)\/versions$/;
@@ -64,6 +65,8 @@ export function initNock(url) {
     .reply(interceptable(getReferencedBy))
     .get(singleContentRegex)
     .reply(interceptable(getContent))
+    .get(workingCopyRegex)
+    .reply(interceptable(getWorkingCopy))
     .put(putContentRegex)
     .reply(interceptable(putContent))
     .delete(singleContentRegex)
@@ -80,8 +83,10 @@ export function intercept(interceptFn) {
 }
 
 // resets content an initialize basic types ()
+let workingCopiesByType = {};
 export function resetContent() {
   initBasetypes();
+  workingCopiesByType = {};
   slugs = [];
   interceptor = () => { };
   versionsMeta = {};
@@ -93,6 +98,14 @@ export function resetContent() {
 // Removes all base types (needed for a few very generic tests)
 export function clearBaseTypes() {
   types = {};
+}
+
+export function addWorkingCopy(type, id, content) {
+
+  if (!workingCopiesByType[type]) {
+    workingCopiesByType[type] = {};
+  }
+  workingCopiesByType[type][id] = { created: new Date().toISOString(), updated: new Date().toISOString(), ...content };
 }
 
 export async function addContent(type, id, content, skipEvents) {
@@ -455,6 +468,13 @@ function autocomplete(url) {
 
   const responseBody = { result };
   return [ 200, responseBody ];
+}
+
+function getWorkingCopy(url) {
+  const matches = url.match(workingCopyRegex);
+  const [ , type, id ] = matches || [];
+  const workingCopy = workingCopiesByType[type]?.[id];
+  return workingCopy ? [ 200, workingCopy ] : [ 404 ];
 }
 
 function getContent(url) {
