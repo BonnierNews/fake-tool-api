@@ -365,6 +365,14 @@ function requestSlug(url, body) {
     body.publishTime = new Date().toISOString();
   }
 
+  const slugExists = slugs.some((s) => s.channel === body.channel &&
+    s.path === body.path &&
+    s.value === body.value &&
+    s.valueType === body.valueType);
+  if (slugExists) {
+    return [ 200 ];
+  }
+
   const conflictingSlug = slugs.some((s) => s.channel === body.channel && s.path === body.path);
   if (conflictingSlug) {
     return [ 409 ];

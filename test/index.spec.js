@@ -39,6 +39,7 @@ describe("Fake tool api", () => {
     });
 
   });
+
   describe("PUT /content", () => {
 
     it("should reject non-uuid ids", async () => {
@@ -281,7 +282,49 @@ describe("Fake tool api", () => {
       expect(responseBody.hits).to.have.length(1);
       expect(responseBody.hits[0].title).to.equal("banana");
     });
+  });
 
+  describe("POST /slug", () => {
+    it("should cause a conflict if two entites in the same channel requests the same slug", async () => {
+      const channelId = randomUUID();
+      const firstContentId = randomUUID();
+      let response = await postJson(`${baseUrl}/slug`, {
+        channels: [ channelId ],
+        desiredPath: "/test-path",
+        value: firstContentId,
+        valueType: "content",
+      });
+      expect(response.status).to.eql(200);
+
+      const secondContentId = randomUUID();
+      response = await postJson(`${baseUrl}/slug`, {
+        channels: [ channelId ],
+        desiredPath: "/test-path",
+        value: secondContentId,
+        valueType: "content",
+      });
+      expect(response.status).to.eql(409);
+    });
+
+    it("should not cause a conflict if an entity requests the same slug multiple times", async () => {
+      const channelId = randomUUID();
+      const contentID = randomUUID();
+      let response = await postJson(`${baseUrl}/slug`, {
+        channels: [ channelId ],
+        desiredPath: "/test-path",
+        value: contentID,
+        valueType: "content",
+      });
+      expect(response.status).to.eql(200);
+
+      response = await postJson(`${baseUrl}/slug`, {
+        channels: [ channelId ],
+        desiredPath: "/test-path",
+        value: contentID,
+        valueType: "content",
+      });
+      expect(response.status).to.eql(200);
+    });
   });
 });
 
