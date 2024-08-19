@@ -12,6 +12,7 @@ const postSlugRegex = /^\/slug(\?.*)?/;
 const autocompleteRegex = /^\/([\w-]+)\/autocomplete(.*)$/;
 const singleContentRegex = /^\/([\w-]+)\/([\w-]+)$/;
 const workingCopyRegex = /^\/([\w-]+)\/([\w-]+)\/working-copy$/;
+const putWorkingCopyRegex = /^\/([\w-]+)\/([\w-]+)\??([^&]*)\/working-copy$/;
 const putContentRegex = /^\/([\w-]+)\/([\w-]+)\??([^&]*)$/;
 const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89abcd][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const versionsRegex = /^\/([\w-]+)\/([\w-]+)\/versions$/;
@@ -67,8 +68,12 @@ export function initNock(url) {
     .reply(interceptable(getContent))
     .get(workingCopyRegex)
     .reply(interceptable(getWorkingCopy))
+    .put(putWorkingCopyRegex)
+    .reply(interceptable(putWorkingCopy))
     .put(putContentRegex)
     .reply(interceptable(putContent))
+    .delete(workingCopyRegex)
+    .reply(interceptable(deleteWorkingCopy))
     .delete(singleContentRegex)
     .reply(interceptable(deleteContent))
     .post("/search")
@@ -149,10 +154,17 @@ export function addType(type) {
   if (!contentByType[type.name]) {
     contentByType[type.name] = {};
   }
+  if (!workingCopiesByType[type.name]) {
+    workingCopiesByType[type.name] = {};
+  }
 }
 
 export function peekContent(type, id) {
   return contentByType[type]?.[id];
+}
+
+export function peekWorkingCopy(type, id) {
+  return workingCopiesByType[type]?.[id];
 }
 
 export function peekSlugs() {
@@ -507,6 +519,19 @@ function interceptable(fn) {
 
 }
 
+function putWorkingCopy(url, body) {
+  const matches = url.match(putWorkingCopyRegex);
+  const [ , type, id ] = matches || [];
+
+  const ofType = workingCopiesByType[type];
+  if (!ofType) {
+    return [ 404 ];
+  }
+  ofType[id] = body;
+
+  return [ 200, body ];
+}
+
 function putContent(url, body) {
   const matches = url.match(putContentRegex);
   const [ , type, id, query ] = matches || [];
@@ -538,6 +563,13 @@ function putContent(url, body) {
   }
   sendEvent(type, id, "published");
   return [ 200, storedObject, { "sequence-number": parsedSequenceNumber + 1 } ];
+}
+
+function deleteWorkingCopy(url) {
+  const matches = url.match(workingCopyRegex);
+  const [ , type, id ] = matches || [];
+  delete workingCopiesByType[type]?.[id];
+  return [ 200 ];
 }
 
 async function deleteContent(url) {

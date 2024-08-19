@@ -16,6 +16,32 @@ describe("Fake tool api", () => {
     events.length = 0;
   });
   const id = randomUUID();
+
+  describe("working-copy", () => {
+    it("should support PUT:ing working copy", async () => {
+      await putJson(`${baseUrl}/article/${id}/working-copy`, { name: "Hello" });
+      const getRes = await fetch(`${baseUrl}/article/${id}/working-copy`);
+      const article = await getRes.json();
+      expect(article.name).to.eql("Hello");
+      expect(fakeToolApi.peekWorkingCopy("article", id).name).to.eql("Hello");
+
+    });
+
+    it("should suppurt adding working copies via api", async () => {
+      fakeToolApi.addWorkingCopy("article", id, { name: "Hi" });
+      const getRes = await fetch(`${baseUrl}/article/${id}/working-copy`);
+      const article = await getRes.json();
+      expect(article.name).to.eql("Hi");
+      expect(fakeToolApi.peekWorkingCopy("article", id).name).to.eql("Hi");
+    });
+
+    it("should suppurt deleting working copies", async () => {
+      fakeToolApi.addWorkingCopy("article", id, { name: "Hi" });
+      await fetch(`${baseUrl}/article/${id}/working-copy`, { method: "DELETE" });
+      expect(fakeToolApi.peekWorkingCopy("article", id)).to.not.exist;
+    });
+  });
+
   describe("#addContent", () => {
 
     it("should make content get:ble after adding it", async () => {
