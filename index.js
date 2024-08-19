@@ -365,12 +365,16 @@ function requestSlug(url, body) {
     body.publishTime = new Date().toISOString();
   }
 
-  const conflictingSlug = slugs.some((s) => s.channel === body.channel && s.path === body.path);
-  if (conflictingSlug) {
+  const matchingSlug = slugs.find((s) => s.channel === body.channel && s.path === body.path);
+
+  if (matchingSlug && (matchingSlug.value !== body.value || matchingSlug.valueType !== body.valueType)) {
     return [ 409 ];
   }
 
-  slugs.push(body);
+  if (!matchingSlug) {
+    slugs.push(body);
+  }
+
   const responseObject = {
     ids: [ body.id ],
     path: body.path,
