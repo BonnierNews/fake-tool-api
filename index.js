@@ -365,20 +365,16 @@ function requestSlug(url, body) {
     body.publishTime = new Date().toISOString();
   }
 
-  const slugExists = slugs.some((s) => s.channel === body.channel &&
-    s.path === body.path &&
-    s.value === body.value &&
-    s.valueType === body.valueType);
-  if (slugExists) {
-    return [ 200 ];
-  }
+  const matchingSlug = slugs.find((s) => s.channel === body.channel && s.path === body.path);
 
-  const conflictingSlug = slugs.some((s) => s.channel === body.channel && s.path === body.path);
-  if (conflictingSlug) {
+  if (matchingSlug && (matchingSlug.value !== body.value || matchingSlug.valueType !== body.valueType)) {
     return [ 409 ];
   }
 
-  slugs.push(body);
+  if (!matchingSlug) {
+    slugs.push(body);
+  }
+
   const responseObject = {
     ids: [ body.id ],
     path: body.path,
