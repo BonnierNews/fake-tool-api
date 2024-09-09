@@ -634,13 +634,11 @@ function search(url, body) {
           .map((p) => p.toLowerCase());
 
         if (parts.length > 0) {
-          const xd = titleTokens.some((token) =>
+          return titleTokens.some((token) =>
             parts.some((part) =>
               token.toLocaleLowerCase().startsWith(part.toLocaleLowerCase())
             )
           );
-
-          return xd;
         }
 
         return titleTokens.includes(body.q.toLocaleLowerCase());
