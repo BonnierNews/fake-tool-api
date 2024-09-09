@@ -613,10 +613,39 @@ function search(url, body) {
   });
 
   if (body.q) {
-    matchingContent = matchingContent.filter((potentialHit) => {
-      const titleTokens = (potentialHit.title || "").split(" ").map((t) => t.toLowerCase());
-      return titleTokens.includes(body.q.toLocaleLowerCase());
-    });
+    const fields = body.prefixMatchAllTerms ? ["title", "text"] : ["title"];
+    let parts = [];
+    if (body.prefixMatchAllTerms) {
+      parts = body.q
+        .split(" ")
+        .filter((p) => p.length > 0)
+    }
+
+    for (let i = 0; i < fields.length; i++) {
+      const field = fields[i];
+      matchingContent = matchingContent.filter((potentialHit) => {
+        if (!potentialHit[field]) {
+          return true;
+        }
+
+        const titleTokens = (potentialHit[field] || "")
+          .split(" ")
+          .filter((p) => p.length > 0)
+          .map((p) => p.toLowerCase());
+
+        if (parts.length > 0) {
+          const xd = titleTokens.some((token) =>
+            parts.some((part) =>
+              token.toLocaleLowerCase().startsWith(part.toLocaleLowerCase())
+            )
+          );
+
+          return xd;
+        }
+
+        return titleTokens.includes(body.q.toLocaleLowerCase());
+      });
+    }
   }
 
   if (body.sort && Array.isArray(body.sort) && body.sort.length > 0) {
