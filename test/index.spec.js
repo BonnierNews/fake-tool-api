@@ -27,7 +27,7 @@ describe("Fake tool api", () => {
 
     });
 
-    it("should suppurt adding working copies via api", async () => {
+    it("should support adding working copies via api", async () => {
       fakeToolApi.addWorkingCopy("article", id, { name: "Hi" });
       const getRes = await fetch(`${baseUrl}/article/${id}/working-copy`);
       const article = await getRes.json();
@@ -35,7 +35,7 @@ describe("Fake tool api", () => {
       expect(fakeToolApi.peekWorkingCopy("article", id).name).to.eql("Hi");
     });
 
-    it("should suppurt deleting working copies", async () => {
+    it("should support deleting working copies", async () => {
       fakeToolApi.addWorkingCopy("article", id, { name: "Hi" });
       await fetch(`${baseUrl}/article/${id}/working-copy`, { method: "DELETE" });
       expect(fakeToolApi.peekWorkingCopy("article", id)).to.not.exist;
@@ -307,6 +307,31 @@ describe("Fake tool api", () => {
       const responseBody = await response.json();
       expect(responseBody.hits).to.have.length(1);
       expect(responseBody.hits[0].title).to.equal("banana");
+    });
+
+    it("should find articles where any term starts with the search query using prefixMatchAllTerms", async () => {
+      const content1Id = randomUUID();
+      fakeToolApi.addContent("article", content1Id, { attributes: { name: "apple" } });
+      const content2Id = randomUUID();
+      fakeToolApi.addContent("article", content2Id, { attributes: { name: "bananas in pyjamas" } });
+
+      const response = await postJson(`${baseUrl}/search`, { q: 'pyjam', prefixMatchAllTerms: true });
+      expect(response.status).to.eql(200);
+      const responseBody = await response.json();
+      expect(responseBody.hits).to.have.length(1);
+      expect(responseBody.hits[0].title).to.equal("bananas in pyjamas");
+    });
+
+    it("should return no articles when no term starts with the search query using prefixMatchAllTerms", async () => {
+      const content1Id = randomUUID();
+      fakeToolApi.addContent("article", content1Id, { attributes: { name: "apple" } });
+      const content2Id = randomUUID();
+      fakeToolApi.addContent("article", content2Id, { attributes: { name: "bananas in pyjamas" } });
+
+      const response = await postJson(`${baseUrl}/search`, { q: 'pear', prefixMatchAllTerms: true });
+      expect(response.status).to.eql(200);
+      const responseBody = await response.json();
+      expect(responseBody.hits).to.have.length(0);
     });
   });
 
