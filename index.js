@@ -613,7 +613,7 @@ function search(url, body) {
   });
 
   if (body.q) {
-    const fields = body.prefixMatchAllTerms ? ["title", "text"] : ["title"];
+    const fields = ["title", "text"];
     let parts = [];
     if (body.prefixMatchAllTerms) {
       parts = body.q
