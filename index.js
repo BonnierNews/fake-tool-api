@@ -507,7 +507,11 @@ function getContent(url) {
   if (!content) {
     return [ 404 ];
   }
-  return [ 200, content, { "sequence-number": ofType[id].sequenceNumber } ];
+  const headers = { "sequence-number": ofType[id].sequenceNumber };
+  if (workingCopiesByType[type]?.[id]) {
+    headers["working-copy-exists"] = true;
+  }
+  return [ 200, content, headers ];
 }
 
 function interceptable(fn) {
@@ -613,12 +617,12 @@ function search(url, body) {
   });
 
   if (body.q) {
-    const fields = ["title", "text"];
+    const fields = [ "title", "text" ];
     let parts = [];
     if (body.prefixMatchAllTerms) {
       parts = body.q
         .split(" ")
-        .filter((p) => p.length > 0)
+        .filter((p) => p.length > 0);
     }
 
     for (let i = 0; i < fields.length; i++) {

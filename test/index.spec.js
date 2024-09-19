@@ -113,6 +113,16 @@ describe("Fake tool api", () => {
     });
   });
 
+  describe("GET /content", () => {
+    it("should return working-copy-exists header when entity has working copy", async () => {
+      await putJson(`${baseUrl}/article/${id}`, { headline: "Blah" });
+      await putJson(`${baseUrl}/article/${id}/working-copy`, { headline: "Habla" });
+      const res = await fetch(`${baseUrl}/article/${id}`);
+      const workingCopyExists = res.headers.get("working-copy-exists");
+      expect(workingCopyExists).to.eql("true");
+    });
+  });
+
   describe("GET /referenced-by", () => {
     it("should return a shallow list of referensing content", async () => {
       fakeToolApi.addContent("article", id, { headline: "Hej" });
@@ -315,7 +325,7 @@ describe("Fake tool api", () => {
       const content2Id = randomUUID();
       fakeToolApi.addContent("article", content2Id, { attributes: { name: "bananas in pyjamas" } });
 
-      const response = await postJson(`${baseUrl}/search`, { q: 'pyjam', prefixMatchAllTerms: true });
+      const response = await postJson(`${baseUrl}/search`, { q: "pyjam", prefixMatchAllTerms: true });
       expect(response.status).to.eql(200);
       const responseBody = await response.json();
       expect(responseBody.hits).to.have.length(1);
@@ -328,7 +338,7 @@ describe("Fake tool api", () => {
       const content2Id = randomUUID();
       fakeToolApi.addContent("article", content2Id, { attributes: { name: "bananas in pyjamas" } });
 
-      const response = await postJson(`${baseUrl}/search`, { q: 'pear', prefixMatchAllTerms: true });
+      const response = await postJson(`${baseUrl}/search`, { q: "pear", prefixMatchAllTerms: true });
       expect(response.status).to.eql(200);
       const responseBody = await response.json();
       expect(responseBody.hits).to.have.length(0);
