@@ -23,7 +23,7 @@ const routes = {
     delete: deleteWorkingCopy,
   }),
   versions: buildRoute("/:type/:id/versions", { get: getVersions }),
-  getVersion: buildRoute("/:type/:id/version/:version", { get: getVersion }),
+  getVersion: buildRoute("/:type/:id/versions/:version", { get: getVersion }),
   referencedBy: buildRoute("/:type/:id/referenced-by", { get: getReferencedBy }),
   search: buildRoute("/search", { post: search }),
   types: buildRoute("/types", { get: getTypes }),
