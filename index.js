@@ -1,24 +1,51 @@
 import nock from "nock";
 import { randomUUID } from "crypto";
+import { pathToRegexp, match } from "path-to-regexp";
 
-let types, contentByType, userSettings, slugs = [], versionsMeta = {}, versions = {}, referencedBy = {}, baseUrl;
-const userSettingRegex = /^\/user-setting\/([\w-]+)\/([\w-]+)\/([\w-]+)/;
-const listRegex = /^\/*([\w-]+)?\/all(.*)$/;
-const slugsRegex = /^\/slugs(\?.*)?/;
-const getSlugRegex = /^\/slug\/([\w-]+)/;
-const getSlugByValueRegex = /^\/slug\/byValue\/([\w-]+)/;
-const getSlugsByValuesRegex = /^\/slugs\/byValues$/;
-const postSlugRegex = /^\/slug(\?.*)?/;
-const autocompleteRegex = /^\/([\w-]+)\/autocomplete(.*)$/;
-const singleContentRegex = /^\/([\w-]+)\/([\w-]+)$/;
-const workingCopyRegex = /^\/([\w-]+)\/([\w-]+)\/working-copy$/;
-const putWorkingCopyRegex = /^\/([\w-]+)\/([\w-]+)\??([^&]*)\/working-copy$/;
-const putContentRegex = /^\/([\w-]+)\/([\w-]+)\??([^&]*)$/;
 const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89abcd][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const versionsRegex = /^\/([\w-]+)\/([\w-]+)\/versions$/;
-const referencedByRegex = /^\/([\w-]+)\/([\w-]+)\/referenced-by$/;
-const versionRegex = /^\/([\w-]+)\/([\w-]+)\/versions\/\d+$/;
+
+const routes = {
+  userSettings: buildRoute("/user-setting/:userId/:type/:key", {
+    get: getUserSetting,
+    put: putUserSetting,
+    delete: deleteUserSetting,
+  }),
+  list: buildRoute("{/:type}/all", { get: list }),
+  slugs: buildRoute("/slugs", { get: slugsList }),
+  slugsByValues: buildRoute("/slugs/byValues", { post: filterSlugsByValues }),
+  getSlug: buildRoute("/slug/:id", { get: getSlug, delete: deleteSlug }),
+  getSlugByValue: buildRoute("/slug/byValue/:id", { get: filterSlugsByValue }),
+  postSlug: buildRoute("/slug", { post: requestSlug }),
+  autocomplete: buildRoute("/:type/autocomplete", { get: autocomplete }),
+  workingCopy: buildRoute("/:type/:id/working-copy", {
+    get: getWorkingCopy,
+    put: putWorkingCopy,
+    delete: deleteWorkingCopy,
+  }),
+  versions: buildRoute("/:type/:id/versions", { get: getVersions }),
+  getVersion: buildRoute("/:type/:id/version/:version", { get: getVersion }),
+  referencedBy: buildRoute("/:type/:id/referenced-by", { get: getReferencedBy }),
+  search: buildRoute("/search", { post: search }),
+  types: buildRoute("/types", { get: getTypes }),
+  singleContent: buildRoute("/:type/:id", {
+    get: getContent,
+    put: putContent,
+    delete: deleteContent,
+  }),
+};
+
+let types, contentByType, workingCopiesByType = {}, userSettings, slugs = [], versionsMeta = {}, versions = {}, referencedBy = {}, baseUrl;
 let interceptor = () => { };
+
+function buildRoute(route, handlers) {
+  return {
+    route,
+    regexp: pathToRegexp(route).regexp,
+    match: match(route),
+    handlers,
+  };
+}
+
 export function init(url, pubSubListenerArg) {
   initNock(url);
   initPubsub(pubSubListenerArg);
@@ -34,53 +61,20 @@ export function initPubsub(listener) {
 export function initNock(url) {
 
   baseUrl = url;
-  const mock = nock(url);
-  mock
-    .put(userSettingRegex)
-    .reply(interceptable(putUserSetting))
-    .get(userSettingRegex)
-    .reply(interceptable(getUserSetting))
-    .delete(userSettingRegex)
-    .reply(interceptable(deleteUserSetting))
-    .get(listRegex)
-    .reply(interceptable(list))
-    .get(slugsRegex)
-    .reply(interceptable(slugsList))
-    .get(getSlugByValueRegex)
-    .reply(interceptable(filterSlugsByValue))
-    .post(getSlugsByValuesRegex)
-    .reply(interceptable(filterSlugsByValues))
-    .get(getSlugRegex)
-    .reply(interceptable(getSlug))
-    .delete(getSlugRegex)
-    .reply(interceptable(deleteSlug))
-    .post(postSlugRegex)
-    .reply(interceptable(requestSlug))
-    .get(autocompleteRegex)
-    .reply(interceptable(autocomplete))
-    .get(versionRegex)
-    .reply(interceptable(getVersion))
-    .get(versionsRegex)
-    .reply(interceptable(getVersions))
-    .get(referencedByRegex)
-    .reply(interceptable(getReferencedBy))
-    .get(singleContentRegex)
-    .reply(interceptable(getContent))
-    .get(workingCopyRegex)
-    .reply(interceptable(getWorkingCopy))
-    .put(putWorkingCopyRegex)
-    .reply(interceptable(putWorkingCopy))
-    .put(putContentRegex)
-    .reply(interceptable(putContent))
-    .delete(workingCopyRegex)
-    .reply(interceptable(deleteWorkingCopy))
-    .delete(singleContentRegex)
-    .reply(interceptable(deleteContent))
-    .post("/search")
-    .reply(interceptable(search))
-    .get("/types")
-    .reply(interceptable(getTypes))
-    .persist();
+  const scope = nock(url);
+
+  Object.keys(routes).forEach((route) => {
+    const routeConfig = routes[route];
+
+    Object.keys(routeConfig.handlers).forEach((verb) => {
+      const handler = routeConfig.handlers[verb];
+
+      scope[verb](routeConfig.regexp)
+        .query(true)
+        .reply(interceptable(handler, routeConfig))
+        .persist();
+    });
+  });
 }
 
 export function intercept(interceptFn) {
@@ -88,7 +82,6 @@ export function intercept(interceptFn) {
 }
 
 // resets content an initialize basic types ()
-let workingCopiesByType = {};
 export function resetContent() {
   initBasetypes();
   workingCopiesByType = {};
@@ -106,7 +99,6 @@ export function clearBaseTypes() {
 }
 
 export function addWorkingCopy(type, id, content) {
-
   if (!workingCopiesByType[type]) {
     workingCopiesByType[type] = {};
   }
@@ -192,489 +184,33 @@ export function addUserSetting(userId, type, key, value) {
   userSettings[userId][type][key] = value;
 }
 
-function putUserSetting(url, body) {
-  const [ , userId, type, key ] = url.match(userSettingRegex) || [];
-  addUserSetting(userId, type, key, body);
-  return [ 200, body ];
-}
-
-function getUserSetting(url) {
-  const [ , userId, type, key ] = url.match(userSettingRegex) || [];
-  const found = userSettings[userId]?.[type]?.[key];
-  if (!found) {
-    return [ 404 ];
-  }
-
-  return [ 200, found ];
-}
-
-function deleteUserSetting(url) {
-  const [ , userId, type, key ] = url.match(userSettingRegex) || [];
-  if (!userSettings[userId]?.[type]?.[key]) {
-    return [ 404 ];
-  }
-  delete userSettings[userId][type][key];
-  return [ 200 ];
-}
-
-function list(url) {
-  const [ , type, query ] = url.match(listRegex) || [];
-  const queryParams = new URLSearchParams(query);
-  const parent = queryParams.get("parent");
-  let ofType;
-  if (type) {
-    ofType = contentByType[type];
-    if (!ofType) {
-      return [ 404 ];
-    }
-  } else {
-    ofType = Object.keys(contentByType).reduce((acc, t) => {
-      return { ...acc, ...contentByType[t] };
-    }, {});
-  }
-  const typeByContentId = {};
-  for (const [ t, contentById ] of Object.entries(contentByType)) {
-    for (const contentId of Object.keys(contentById)) {
-      typeByContentId[contentId] = t;
-    }
-  }
-
-  let items;
-  if (parent) {
-    if (parent === "none") {
-      items = Object.keys(ofType).map((id) => {
-        return {
-          id,
-          type: typeByContentId[id],
-          content: ofType[id],
-        };
-      }).filter(({ content }) => !content.attributes.parent);
-    } else {
-      items = Object.keys(ofType).map((id) => {
-        if (ofType[id].attributes.parent === parent) {
-          return { id, content: ofType[id], type: ofType[id].type };
-        }
-      }).filter(Boolean);
-    }
-    items.forEach((item) => {
-      item.hasChildren = Object.values(ofType).some((potentialChild) => potentialChild.attributes?.parent === item.id);
-    });
-  } else {
-    items = Object.keys(ofType).map((id) => {
-      return {
-        id,
-        type: typeByContentId[id],
-        content: ofType[id],
-      };
-    });
-  }
-
-  const keyword = queryParams.get("keyword");
-  if (keyword) {
-    items = items.filter((item) => item.content.attributes.name.toLowerCase().includes(keyword.toLocaleLowerCase()));
-  }
-
-  const channel = queryParams.get("channel");
-  if (channel) {
-    const typeDefinition = types[type];
-    if (typeDefinition.channelSpecific) {
-      items = items.filter((item) => item.content.attributes.channel === channel);
-    } else {
-      items = items.filter((item) => item.content.attributes.channels.indexOf(channel) !== -1);
-    }
-  }
-
-  const publishingGroup = queryParams.get("publishingGroup");
-  if (publishingGroup) {
-    items = items.filter((item) => item.content.publishingGroup === publishingGroup);
-  }
-
-  const onlyPublished = queryParams.get("onlyPublished");
-  if (onlyPublished === "true") {
-    items = items.filter((item) => {
-      if (item.content.attributes.firstPublishTime && new Date(item.content.attributes.firstPublishTime) > new Date()) {
-        return false;
-      }
-      if (item.content.publishedState && item.content.publishedState !== "PUBLISHED") {
-        return false;
-      }
-      return true;
-    });
-  }
-
-  const activeState = queryParams.get("activeState");
-  if (activeState) {
-    items = items.filter((item) => {
-      if (activeState === "active") {
-        return item.content.active;
-      }
-      if (activeState === "inactive") {
-        return !item.content.active;
-      }
-    });
-  }
-  const excludeFromPublishingEvents = queryParams.get("excludeFromPublishingEvents");
-  if (excludeFromPublishingEvents === "true") {
-    const excludeTypes = Object.values(types).filter((t) => t.excludeFromPublishingEvents).map((td) => td.name);
-    items = items.filter((item) => {
-      return excludeTypes.indexOf(item.type) === -1;
-    });
-  }
-  const filterTypes = queryParams.getAll("type");
-  if (filterTypes.length > 0) {
-    items = items.filter((item) => filterTypes.includes(item.type));
-  }
-
-  const orgLength = items.length;
-
-  let responseItems = items;
-  const from = queryParams.get("cursor");
-  if (from) {
-    items = items.slice(parseInt(from));
-  }
-  const size = queryParams.get("size");
-  if (size) {
-    responseItems = items.slice(0, parseInt(size));
-  }
-  let nextCursor, nextUrl;
-  if (responseItems.length < items.length) {
-    const reqUrl = new URL(this.req.options.href);
-    let newCursor = parseInt(size);
-    if (from) {
-      newCursor += parseInt(from);
-    }
-    if (keyword) {
-      reqUrl.searchParams.set("keyword", keyword);
-    }
-
-    reqUrl.searchParams.set("cursor", newCursor);
-    nextCursor = orgLength - (items.length - responseItems.length);
-    const nextUrlObj = new URL(`${baseUrl}${url}`);
-    nextUrlObj.searchParams.set("cursor", nextCursor);
-    nextUrl = nextUrlObj.toString();
-
-  }
-  responseItems = JSON.parse(JSON.stringify(responseItems));
-  responseItems.forEach((item) => {
-    item.sequenceNumber = item.content.sequenceNumber;
-    delete item.content.sequenceNumber;
-  });
-  const responseBody = { items: responseItems, nextCursor, next: nextUrl };
-  return [ 200, responseBody ];
-}
-
-function requestSlug(url, body) {
-  body.channel = body.channel || body.channels[0];
-  body.path = body.desiredPath;
-  delete body.desiredPath;
-  body.id = randomUUID();
-
-  if (body.publishTime === "") {
-    return [ 400 ];
-  }
-
-  if (!body.publishTime) {
-    body.publishTime = new Date().toISOString();
-  }
-
-  const matchingSlug = slugs.find((s) => s.channel === body.channel && s.path === body.path);
-
-  if (matchingSlug && (matchingSlug.value !== body.value || matchingSlug.valueType !== body.valueType)) {
-    return [ 409 ];
-  }
-
-  if (!matchingSlug) {
-    slugs.push(body);
-  }
-
-  const responseObject = {
-    ids: [ body.id ],
-    path: body.path,
-  };
-  return [ 200, responseObject ];
-}
-
-function filterSlugsByValue(url) {
-  const [ , id ] = url.match(getSlugByValueRegex) || [];
-  const filtered = slugs.filter((s) => s.value === id);
-  return [ 200, { slugs: filtered } ];
-}
-
-function filterSlugsByValues(url, body) {
-  if (!body.values) {
-    return [ 400 ];
-  }
-  const response = {};
-  body.values.forEach((value) => {
-    response[value] = [];
-  });
-  slugs.forEach((slug) => {
-    if (body.values.indexOf(slug.value) !== -1) {
-      response[slug.value].push(slug);
-    }
-  });
-  return [ 200, response ];
-}
-
-function getSlug(url) {
-  const [ , id ] = url.match(getSlugRegex) || [];
-  const slug = slugs.find((s) => s.id === id);
-  if (!slug) {
-    return [ 404 ];
-  }
-  return [ 200, slug ];
-}
-
-function deleteSlug(url) {
-  const [ , id ] = url.match(getSlugRegex) || [];
-  const slug = slugs.find((s) => s.id === id);
-  if (!slug) {
-    return [ 404 ];
-  }
-  slugs.splice(slugs.indexOf(slug), 1);
-  return [ 200 ];
-}
-
-function slugsList(url) {
-  const [ , query ] = url.match(slugsRegex) || [];
-  const queryParams = new URLSearchParams(query);
-  let items = slugs;
-  const channel = queryParams.get("channel");
-  if (channel) {
-    items = items.filter((item) => item.channel === channel);
-  }
-  const path = queryParams.get("path");
-  if (path) {
-    items = items.filter((item) => item.path === path);
-  }
-  const valueType = queryParams.get("valueType");
-  if (valueType) {
-    items = items.filter((item) => item.valueType === valueType);
-  }
-  const value = queryParams.get("value");
-  if (value) {
-    items = items.filter((item) => item.value === value);
-  }
-  const responseBody = { items/* , next*/ };
-  return [ 200, responseBody ];
-}
-
-function autocomplete(url) {
-  const [ , type, query ] = url.match(autocompleteRegex) || [];
-  const searchParams = new URLSearchParams(query);
-  const q = searchParams.get("keyword");
-  const publishingGroup = searchParams.get("publishingGroup");
-  const channel = searchParams.get("channel");
-  const ofType = contentByType[type];
-  const result = Object.keys(ofType)
-    .map((id) => {
-      return { id, content: ofType[id] };
-    })
-    .filter(({ content }) => content.attributes.name.startsWith(q))
-    .filter(({ content }) => !publishingGroup || content.publishingGroup === publishingGroup)
-    .filter(({ content }) => !channel || content.attributes.channel === channel)
-    .map(({ id, content }) => {
-      return {
-        id,
-        name: content.attributes.name,
-        description: content.attributes.description,
-        channel: types[type].channelSpecific ? content.attributes.channel : undefined,
-      };
-    });
-
-  const responseBody = { result };
-  return [ 200, responseBody ];
-}
-
-function getWorkingCopy(url) {
-  const matches = url.match(workingCopyRegex);
-  const [ , type, id ] = matches || [];
-  const workingCopy = workingCopiesByType[type]?.[id];
-  return workingCopy ? [ 200, workingCopy ] : [ 404 ];
-}
-
-function getContent(url) {
-  const matches = url.match(singleContentRegex);
-  const [ , type, id ] = matches || [];
-  if (!id.match(uuidRegex)) {
-    return [ 400 ];
-  }
-  const ofType = contentByType[type];
-  if (!ofType) {
-    return [ 404 ];
-  }
-  const content = ofType[id];
-  if (!content) {
-    return [ 404 ];
-  }
-  const headers = { "sequence-number": ofType[id].sequenceNumber };
-  if (workingCopiesByType[type]?.[id]) {
-    headers["working-copy-exists"] = true;
-  }
-  return [ 200, content, headers ];
-}
-
-function interceptable(fn) {
-  return function () {
-    const intercepted = interceptor(this.method, ...arguments);
+function interceptable(routeInterceptor, route) {
+  return function (url, body) {
+    const intercepted = interceptor(this.method, url, body);
     if (intercepted) return intercepted;
-    return fn.apply(this, arguments);
+
+    const href = new URL(url, baseUrl);
+    const req = {
+      method: this.method,
+      params: route.match(href.pathname).params,
+      searchParams: href.searchParams,
+      url,
+      body,
+    };
+
+    const result = routeInterceptor(req);
+
+    if (result && result[0] <= 299) {
+      const type = req.params.type;
+      const id = req.params.id;
+
+      if (type && id && req.searchParams.get("deleteWorkingCopy") === "true") {
+        delete workingCopiesByType[type]?.[id];
+      }
+    }
+
+    return result;
   };
-
-}
-
-function putWorkingCopy(url, body) {
-  const matches = url.match(putWorkingCopyRegex);
-  const [ , type, id ] = matches || [];
-
-  const ofType = workingCopiesByType[type];
-  if (!ofType) {
-    return [ 404 ];
-  }
-  ofType[id] = body;
-
-  return [ 200, body ];
-}
-
-function putContent(url, body) {
-  const matches = url.match(putContentRegex);
-  const [ , type, id, query ] = matches || [];
-  const qs = new URLSearchParams(query);
-  if (!id.match(uuidRegex)) {
-    return [ 400 ];
-  }
-  const ofType = contentByType[type];
-  if (!ofType) {
-    return [ 404 ];
-  }
-  let parsedSequenceNumber = 0;
-  const sequenceNumber = qs.get("ifSequenceNumber");
-  if (sequenceNumber !== null) {
-    parsedSequenceNumber = parseInt(sequenceNumber);
-    if (ofType[id] && (ofType[id].sequenceNumber !== parsedSequenceNumber)) {
-      return [ 409 ];
-    }
-  }
-  const storedObject = JSON.parse(JSON.stringify(body));
-  const now = new Date().toISOString();
-  storedObject.updated = new Date().toISOString();
-  if (!ofType[id]) {
-    storedObject.created = now;
-  }
-  ofType[id] = { ...storedObject, sequenceNumber: parsedSequenceNumber + 1 };
-  if (types[type].versioned) {
-    storeVersion(type, id, ofType[id]);
-  }
-  sendEvent(type, id, "published");
-  return [ 200, storedObject, { "sequence-number": parsedSequenceNumber + 1 } ];
-}
-
-function deleteWorkingCopy(url) {
-  const matches = url.match(workingCopyRegex);
-  const [ , type, id ] = matches || [];
-  delete workingCopiesByType[type]?.[id];
-  return [ 200 ];
-}
-
-async function deleteContent(url) {
-  const matches = url.match(singleContentRegex);
-  const [ , type, id ] = matches || [];
-  if (!id.match(uuidRegex)) {
-    return [ 400 ];
-  }
-  const ofType = contentByType[type];
-  if (!ofType) {
-    return [ 404 ];
-  }
-  delete contentByType[type][id];
-  await sendEvent(type, id, "unpublished");
-  return [ 200 ];
-}
-
-function search(url, body) {
-  let matchingContent = Object.keys(contentByType).flatMap((typeName) => {
-    if (body.types && !body.types.includes(typeName)) {
-      return [];
-    }
-    const ofType = contentByType[typeName];
-    const ids = Object.keys(ofType);
-
-    // const mapped =
-    return ids.map((id) => {
-      const content = ofType[id];
-      const hit = {
-        type: typeName,
-        id,
-        title: content.attributes?.name,
-      };
-
-      if (body.returnContent) {
-        hit.content = content;
-      }
-
-      return hit;
-    });
-  });
-
-  if (body.q) {
-    const fields = [ "title", "text" ];
-    let parts = [];
-    if (body.prefixMatchAllTerms) {
-      parts = body.q
-        .split(" ")
-        .filter((p) => p.length > 0);
-    }
-
-    for (let i = 0; i < fields.length; i++) {
-      const field = fields[i];
-      matchingContent = matchingContent.filter((potentialHit) => {
-        if (!potentialHit[field]) {
-          return true;
-        }
-
-        const titleTokens = (potentialHit[field] || "")
-          .split(" ")
-          .filter((p) => p.length > 0)
-          .map((p) => p.toLowerCase());
-
-        if (parts.length > 0) {
-          return titleTokens.some((token) =>
-            parts.some((part) =>
-              token.toLocaleLowerCase().startsWith(part.toLocaleLowerCase())
-            )
-          );
-        }
-
-        return titleTokens.includes(body.q.toLocaleLowerCase());
-      });
-    }
-  }
-
-  if (body.sort && Array.isArray(body.sort) && body.sort.length > 0) {
-    matchingContent.sort((aObj, bObj) => {
-      const a = aObj[body.sort[0].by];
-      const b = bObj[body.sort[0].by];
-      if (typeof a === "string" && typeof b === "string") {
-        if (body.sort[0].order === "asc") {
-          return a.localeCompare(b);
-        }
-        return b.localeCompare(a);
-      }
-    });
-  }
-
-  const from = body.from || 0;
-  let size = body.size || matchingContent.length;
-
-  if (body.from && body.size) {
-    size = body.from + body.size;
-  }
-
-  return [ 200, { hits: matchingContent.slice(from, size), total: matchingContent.length } ];
-}
-
-function getTypes() {
-  return [ 200, Object.values(types) ];
 }
 
 function initBasetypes() {
@@ -805,11 +341,6 @@ function applyDefaults(properties) {
   });
 }
 
-function getVersions(url) {
-  const [ , type, id ] = url.split("/");
-  return [ 200, { items: versionsMeta?.[type]?.[id] } ];
-}
-
 function storeVersion(type, id, content) {
   if (!versionsMeta[type]) {
     versionsMeta[type] = {};
@@ -835,12 +366,479 @@ function addReferencingContent(type, id, referencingItems) {
   referencedBy[type][id] = referencingItems;
 }
 
-function getReferencedBy(url) {
-  const [ , type, id ] = url.split("/");
-  return [ 200, referencedBy[type]?.[id] || [] ];
+/**
+ * Default Route handlers
+ */
+
+function putUserSetting(req) {
+  const { userId, type, key } = req.params;
+  const body = req.body;
+  addUserSetting(userId, type, key, body);
+  return [ 200, body ];
 }
 
-function getVersion(url) {
-  const [ , type, id, , version ] = url.split("/");
+function getUserSetting(req) {
+  const { userId, type, key } = req.params;
+  const found = userSettings[userId]?.[type]?.[key];
+  if (!found) {
+    return [ 404 ];
+  }
+
+  return [ 200, found ];
+}
+
+function deleteUserSetting(req) {
+  const { userId, type, key } = req.params;
+  if (!userSettings[userId]?.[type]?.[key]) {
+    return [ 404 ];
+  }
+  delete userSettings[userId][type][key];
+  return [ 200 ];
+}
+
+function list(req) {
+  const type = req.params.type;
+  const parent = req.searchParams.get("parent");
+  let ofType;
+  if (type) {
+    ofType = contentByType[type];
+    if (!ofType) {
+      return [ 404 ];
+    }
+  } else {
+    ofType = Object.keys(contentByType).reduce((acc, t) => {
+      return { ...acc, ...contentByType[t] };
+    }, {});
+  }
+  const typeByContentId = {};
+  for (const [ t, contentById ] of Object.entries(contentByType)) {
+    for (const contentId of Object.keys(contentById)) {
+      typeByContentId[contentId] = t;
+    }
+  }
+
+  let items;
+  if (parent) {
+    if (parent === "none") {
+      items = Object.keys(ofType).map((id) => {
+        return {
+          id,
+          type: typeByContentId[id],
+          content: ofType[id],
+        };
+      }).filter(({ content }) => !content.attributes.parent);
+    } else {
+      items = Object.keys(ofType).map((id) => {
+        if (ofType[id].attributes.parent === parent) {
+          return { id, content: ofType[id], type: ofType[id].type };
+        }
+      }).filter(Boolean);
+    }
+    items.forEach((item) => {
+      item.hasChildren = Object.values(ofType).some((potentialChild) => potentialChild.attributes?.parent === item.id);
+    });
+  } else {
+    items = Object.keys(ofType).map((id) => {
+      return {
+        id,
+        type: typeByContentId[id],
+        content: ofType[id],
+      };
+    });
+  }
+
+  const keyword = req.searchParams.get("keyword");
+  if (keyword) {
+    items = items.filter((item) => item.content.attributes.name.toLowerCase().includes(keyword.toLocaleLowerCase()));
+  }
+
+  const channel = req.searchParams.get("channel");
+  if (channel) {
+    const typeDefinition = types[type];
+    if (typeDefinition.channelSpecific) {
+      items = items.filter((item) => item.content.attributes.channel === channel);
+    } else {
+      items = items.filter((item) => item.content.attributes.channels.indexOf(channel) !== -1);
+    }
+  }
+
+  const publishingGroup = req.searchParams.get("publishingGroup");
+  if (publishingGroup) {
+    items = items.filter((item) => item.content.publishingGroup === publishingGroup);
+  }
+
+  const onlyPublished = req.searchParams.get("onlyPublished");
+  if (onlyPublished === "true") {
+    items = items.filter((item) => {
+      if (item.content.attributes.firstPublishTime && new Date(item.content.attributes.firstPublishTime) > new Date()) {
+        return false;
+      }
+      if (item.content.publishedState && item.content.publishedState !== "PUBLISHED") {
+        return false;
+      }
+      return true;
+    });
+  }
+
+  const activeState = req.searchParams.get("activeState");
+  if (activeState) {
+    items = items.filter((item) => {
+      if (activeState === "active") {
+        return item.content.active;
+      }
+      if (activeState === "inactive") {
+        return !item.content.active;
+      }
+    });
+  }
+
+  const excludeFromPublishingEvents = req.searchParams.get("excludeFromPublishingEvents");
+  if (excludeFromPublishingEvents === "true") {
+    const excludeTypes = Object.values(types).filter((t) => t.excludeFromPublishingEvents).map((td) => td.name);
+    items = items.filter((item) => {
+      return excludeTypes.indexOf(item.type) === -1;
+    });
+  }
+  const filterTypes = req.searchParams.getAll("type");
+  if (filterTypes.length > 0) {
+    items = items.filter((item) => filterTypes.includes(item.type));
+  }
+
+  const orgLength = items.length;
+
+  let responseItems = items;
+  const from = req.searchParams.get("cursor");
+  if (from) {
+    items = items.slice(parseInt(from));
+  }
+  const size = req.searchParams.get("size");
+  if (size) {
+    responseItems = items.slice(0, parseInt(size));
+  }
+  let nextCursor, nextUrl;
+  if (responseItems.length < items.length) {
+    nextCursor = orgLength - (items.length - responseItems.length);
+    const nextUrlObj = new URL(req.url, baseUrl);
+    nextUrlObj.searchParams.set("cursor", nextCursor);
+    nextUrl = nextUrlObj.toString();
+
+  }
+  responseItems = JSON.parse(JSON.stringify(responseItems));
+  responseItems.forEach((item) => {
+    item.sequenceNumber = item.content.sequenceNumber;
+    delete item.content.sequenceNumber;
+  });
+  const responseBody = { items: responseItems, nextCursor, next: nextUrl };
+  return [ 200, responseBody ];
+}
+
+function requestSlug(req) {
+  const slug = structuredClone(req.body || {});
+
+  slug.channel = slug.channel || slug.channels[0];
+  slug.path = slug.desiredPath;
+  delete slug.desiredPath;
+  slug.id = randomUUID();
+
+  if (slug.publishTime === "") {
+    return [ 400 ];
+  }
+
+  if (!slug.publishTime) {
+    slug.publishTime = new Date().toISOString();
+  }
+
+  const matchingSlug = slugs.find((s) => s.channel === slug.channel && s.path === slug.path);
+
+  if (matchingSlug && (matchingSlug.value !== slug.value || matchingSlug.valueType !== slug.valueType)) {
+    return [ 409 ];
+  }
+
+  if (!matchingSlug) {
+    slugs.push(slug);
+  }
+
+  const responseObject = {
+    ids: [ slug.id ],
+    path: slug.path,
+  };
+  return [ 200, responseObject ];
+}
+
+function filterSlugsByValue(req) {
+  const id = req.params.id;
+  const filtered = slugs.filter((s) => s.value === id);
+  return [ 200, { slugs: filtered } ];
+}
+
+function filterSlugsByValues(req) {
+  if (!req.body?.values) {
+    return [ 400 ];
+  }
+  const response = {};
+  req.body.values.forEach((value) => {
+    response[value] = [];
+  });
+  slugs.forEach((slug) => {
+    if (req.body.values.indexOf(slug.value) !== -1) {
+      response[slug.value].push(slug);
+    }
+  });
+  return [ 200, response ];
+}
+
+function getSlug(req) {
+  const id = req.params.id;
+  const slug = slugs.find((s) => s.id === id);
+  if (!slug) {
+    return [ 404 ];
+  }
+  return [ 200, slug ];
+}
+
+function deleteSlug(req) {
+  const id = req.params.id;
+  const slug = slugs.find((s) => s.id === id);
+  if (!slug) {
+    return [ 404 ];
+  }
+  slugs.splice(slugs.indexOf(slug), 1);
+  return [ 200 ];
+}
+
+function slugsList(req) {
+  let items = slugs;
+  const channel = req.searchParams.get("channel");
+  if (channel) {
+    items = items.filter((item) => item.channel === channel);
+  }
+  const path = req.searchParams.get("path");
+  if (path) {
+    items = items.filter((item) => item.path === path);
+  }
+  const valueType = req.searchParams.get("valueType");
+  if (valueType) {
+    items = items.filter((item) => item.valueType === valueType);
+  }
+  const value = req.searchParams.get("value");
+  if (value) {
+    items = items.filter((item) => item.value === value);
+  }
+  const responseBody = { items/* , next*/ };
+  return [ 200, responseBody ];
+}
+
+function autocomplete(req) {
+  const type = req.params.type;
+  const q = req.searchParams.get("keyword");
+  const publishingGroup = req.searchParams.get("publishingGroup");
+  const channel = req.searchParams.get("channel");
+  const ofType = contentByType[type];
+  const result = Object.keys(ofType)
+    .map((id) => {
+      return { id, content: ofType[id] };
+    })
+    .filter(({ content }) => content.attributes.name.startsWith(q))
+    .filter(({ content }) => !publishingGroup || content.publishingGroup === publishingGroup)
+    .filter(({ content }) => !channel || content.attributes.channel === channel)
+    .map(({ id, content }) => {
+      return {
+        id,
+        name: content.attributes.name,
+        description: content.attributes.description,
+        channel: types[type].channelSpecific ? content.attributes.channel : undefined,
+      };
+    });
+
+  const responseBody = { result };
+  return [ 200, responseBody ];
+}
+
+function getWorkingCopy(req) {
+  const { type, id } = req.params;
+  const workingCopy = workingCopiesByType[type]?.[id];
+  return workingCopy ? [ 200, workingCopy ] : [ 404 ];
+}
+
+function getContent(req) {
+  const { type, id } = req.params;
+  if (!id.match(uuidRegex)) {
+    return [ 400 ];
+  }
+  const ofType = contentByType[type];
+  if (!ofType) {
+    return [ 404 ];
+  }
+  const content = ofType[id];
+  if (!content) {
+    return [ 404 ];
+  }
+  const headers = { "sequence-number": ofType[id].sequenceNumber };
+  if (workingCopiesByType[type]?.[id]) {
+    headers["working-copy-exists"] = true;
+  }
+  return [ 200, content, headers ];
+}
+
+function putWorkingCopy(req) {
+  const { type, id } = req.params;
+
+  const ofType = workingCopiesByType[type];
+  if (!ofType) {
+    return [ 404 ];
+  }
+  ofType[id] = structuredClone(req.body);
+
+  return [ 200, ofType[id] ];
+}
+
+function putContent(req) {
+  const { type, id } = req.params;
+  if (!id.match(uuidRegex)) {
+    return [ 400 ];
+  }
+  const ofType = contentByType[type];
+  if (!ofType) {
+    return [ 404 ];
+  }
+  let parsedSequenceNumber = 0;
+  const sequenceNumber = req.searchParams.get("ifSequenceNumber");
+  if (sequenceNumber !== null) {
+    parsedSequenceNumber = parseInt(sequenceNumber);
+    if (ofType[id] && (ofType[id].sequenceNumber !== parsedSequenceNumber)) {
+      return [ 409 ];
+    }
+  }
+  const storedObject = structuredClone(req.body);
+  const now = new Date().toISOString();
+  storedObject.updated = new Date().toISOString();
+  if (!ofType[id]) {
+    storedObject.created = now;
+  }
+  ofType[id] = { ...storedObject, sequenceNumber: parsedSequenceNumber + 1 };
+  if (types[type].versioned) {
+    storeVersion(type, id, ofType[id]);
+  }
+  sendEvent(type, id, "published");
+  return [ 200, storedObject, { "sequence-number": parsedSequenceNumber + 1 } ];
+}
+
+function deleteWorkingCopy(req) {
+  const { type, id } = req.params;
+  delete workingCopiesByType[type]?.[id];
+  return [ 200 ];
+}
+
+async function deleteContent(req) {
+  const { type, id } = req.params;
+  if (!id.match(uuidRegex)) {
+    return [ 400 ];
+  }
+  const ofType = contentByType[type];
+  if (!ofType) {
+    return [ 404 ];
+  }
+  delete contentByType[type][id];
+  await sendEvent(type, id, "unpublished");
+  return [ 200 ];
+}
+
+function search(req) {
+  let matchingContent = Object.keys(contentByType).flatMap((typeName) => {
+    if (req.body.types && !req.body.types.includes(typeName)) {
+      return [];
+    }
+    const ofType = contentByType[typeName];
+    const ids = Object.keys(ofType);
+
+    return ids.map((id) => {
+      const content = ofType[id];
+      const hit = {
+        type: typeName,
+        id,
+        title: content.attributes?.name,
+      };
+
+      if (req.body.returnContent) {
+        hit.content = content;
+      }
+
+      return hit;
+    });
+  });
+
+  if (req.body.q) {
+    const fields = [ "title", "text" ];
+    let parts = [];
+    if (req.body.prefixMatchAllTerms) {
+      parts = req.body.q
+        .split(" ")
+        .filter((p) => p.length > 0);
+    }
+
+    for (let i = 0; i < fields.length; i++) {
+      const field = fields[i];
+      matchingContent = matchingContent.filter((potentialHit) => {
+        if (!potentialHit[field]) {
+          return true;
+        }
+
+        const titleTokens = (potentialHit[field] || "")
+          .split(" ")
+          .filter((p) => p.length > 0)
+          .map((p) => p.toLowerCase());
+
+        if (parts.length > 0) {
+          return titleTokens.some((token) =>
+            parts.some((part) =>
+              token.toLocaleLowerCase().startsWith(part.toLocaleLowerCase())
+            )
+          );
+        }
+
+        return titleTokens.includes(req.body.q.toLocaleLowerCase());
+      });
+    }
+  }
+
+  if (req.body.sort && Array.isArray(req.body.sort) && req.body.sort.length > 0) {
+    matchingContent.sort((aObj, bObj) => {
+      const a = aObj[req.body.sort[0].by];
+      const b = bObj[req.body.sort[0].by];
+      if (typeof a === "string" && typeof b === "string") {
+        if (req.body.sort[0].order === "asc") {
+          return a.localeCompare(b);
+        }
+        return b.localeCompare(a);
+      }
+    });
+  }
+
+  const from = req.body.from || 0;
+  let size = req.body.size || matchingContent.length;
+
+  if (req.body.from && req.body.size) {
+    size = req.body.from + req.body.size;
+  }
+
+  return [ 200, { hits: matchingContent.slice(from, size), total: matchingContent.length } ];
+}
+
+function getTypes() {
+  return [ 200, Object.values(types) ];
+}
+
+function getVersions(req) {
+  const { type, id } = req.params;
+  return [ 200, { items: versionsMeta?.[type]?.[id] } ];
+}
+
+function getVersion(req) {
+  const { type, id, version } = req.params;
   return [ 200, versions[type][id][version] ];
+}
+
+function getReferencedBy(req) {
+  const { type, id } = req.params;
+  return [ 200, referencedBy[type]?.[id] || [] ];
 }

@@ -26,6 +26,7 @@
     "node-fetch": "^3.3.2"
   },
   "dependencies": {
-    "nock": "^13.5.3"
+    "nock": "^13.5.3",
+    "path-to-regexp": "^8.2.0"
   }
 }
