@@ -5,7 +5,10 @@
   "description": "Mocked Bonnier News tool api, for use in automated tests",
   "main": "index.js",
   "author": "Bonnier News",
-  "repository": "https://github.com/BonnierNews/fake-tool-api",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/BonnierNews/fake-tool-api.git"
+  },
   "bugs": {
     "url": "https://github.com/BonnierNews/fake-tool-api/issues"
   },
