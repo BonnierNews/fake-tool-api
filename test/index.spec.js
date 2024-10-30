@@ -40,6 +40,25 @@ describe("Fake tool api", () => {
       await fetch(`${baseUrl}/article/${id}/working-copy`, { method: "DELETE" });
       expect(fakeToolApi.peekWorkingCopy("article", id)).to.not.exist;
     });
+
+    it("should support auto-removal of working copies if query is set", async () => {
+      fakeToolApi.addContent("article", id, { headline: "TODO" });
+      fakeToolApi.addWorkingCopy("article", id, { headline: "Working title..." });
+      await putJson(`${baseUrl}/article/${id}?deleteWorkingCopy=true`, { headline: "I think I got it now!" });
+      expect(fakeToolApi.peekWorkingCopy("article", id)).to.not.exist;
+    });
+
+    it("should not auto-remove working copy if query is set but request is not OK", async () => {
+      fakeToolApi.intercept((method, url) => {
+        if (method === "GET" && url.includes(`/article/${id}`)) {
+          return [ 404 ];
+        }
+      });
+
+      fakeToolApi.addWorkingCopy("article", id, { headline: "Title" });
+      await fetch(`${baseUrl}/article/${id}?deleteWorkingCopy=true`);
+      expect(fakeToolApi.peekWorkingCopy("article", id).headline).to.eql("Title");
+    });
   });
 
   describe("#addContent", () => {
