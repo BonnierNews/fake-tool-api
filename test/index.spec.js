@@ -12,7 +12,7 @@ describe("Fake tool api", () => {
     fakeToolApi.init(baseUrl, (msg) => {
       events.push(JSON.parse(msg.data));
     });
-    fakeToolApi.addType({ name: "article" });
+    fakeToolApi.addType({ name: "article" }, true);
     events.length = 0;
   });
   const id = randomUUID();
@@ -83,6 +83,29 @@ describe("Fake tool api", () => {
       expect(events).to.eql([]);
     });
 
+  });
+
+  describe("#addType", () => {
+    beforeEach(() => {
+      fakeToolApi.clearBaseTypes();
+    });
+
+    it("should let user know if a type has already been defined", () => {
+      fakeToolApi.addType({ name: "test" });
+      expect(() => fakeToolApi.addType({ name: "test" })).to.throw("Type test is already defined");
+    });
+
+    it("should allow type redefinitions if explicitly set", async () => {
+      fakeToolApi.addType({ name: "test" });
+      fakeToolApi.addType({
+        name: "test",
+        properties: { attributes: { type: "object", properties: { cool: { type: "string" } } } },
+      }, true);
+
+      const res = await fetch(`${baseUrl}/types`);
+      const types = await res.json();
+      expect(types[0].properties.attributes.properties).to.have.property("cool");
+    });
   });
 
   describe("PUT /content", () => {
