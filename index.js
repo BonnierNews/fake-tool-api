@@ -84,7 +84,6 @@ export function intercept(interceptFn) {
 // resets content an initialize basic types ()
 export function resetContent() {
   initBasetypes();
-  workingCopiesByType = {};
   slugs = [];
   interceptor = () => { };
   versionsMeta = {};
@@ -96,6 +95,8 @@ export function resetContent() {
 // Removes all base types (needed for a few very generic tests)
 export function clearBaseTypes() {
   types = {};
+  workingCopiesByType = {};
+  contentByType = {};
 }
 
 export function addWorkingCopy(type, id, content) {
@@ -135,20 +136,17 @@ export function removeSlug(slug) {
     && p.value === slug.value
     && p.path === slug.path));
 }
-export function addType(type) {
+export function addType(type, allowRedefine = false) {
   if (!type.properties) {
     type.properties = {};
   }
-  if (!types[type.name]) {
-    types[type.name] = mapType(type);
+  if (types[type.name] && !allowRedefine) {
+    throw new Error(`Type ${type.name} is already defined`);
+  }
 
-  }
-  if (!contentByType[type.name]) {
-    contentByType[type.name] = {};
-  }
-  if (!workingCopiesByType[type.name]) {
-    workingCopiesByType[type.name] = {};
-  }
+  types[type.name] = mapType(type);
+  contentByType[type.name] = {};
+  workingCopiesByType[type.name] = {};
 }
 
 export function peekContent(type, id) {
@@ -214,8 +212,7 @@ function interceptable(routeInterceptor, route) {
 }
 
 function initBasetypes() {
-  contentByType = { channel: {}, "publishing-group": {} };
-  types = {};
+  clearBaseTypes();
   addType({
     name: "channel",
     properties: { attributes: { type: "object", properties: { name: { type: "string" } } } },
@@ -227,6 +224,7 @@ function initBasetypes() {
   addType({
     name: "article",
     properties: { attributes: { type: "object", properties: { name: { type: "string" }, headline: { type: "string" } } } },
+    canHaveSlugs: true,
   });
 }
 
