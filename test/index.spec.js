@@ -61,6 +61,34 @@ describe("Fake tool api", () => {
     });
   });
 
+  describe("#deleteContent", () => {
+
+    it("should return 200 when delete:ing content", async () => {
+      fakeToolApi.addContent("article", id, { headline: "Hej" });
+      await fetch(`${baseUrl}/article/${id}`);
+      const res = await fetch(`${baseUrl}/article/${id}`, { method: "DELETE" });
+      expect(res.status).to.eql(200);
+      expect(events).to.have.length(2);
+      expect(events[1]).to.have.property("event", "unpublished");
+      expect(events[1]).to.have.property("id", id);
+      expect(events[1]).to.have.property("type", "article");
+    });
+
+    it("should return 404 when delete:ing non-existing content", async () => {
+      const res = await fetch(`${baseUrl}/article/${randomUUID()}`, { method: "DELETE" });
+      expect(res.status).to.eql(404);
+    });
+    it("should return 404 when delete:ing previously deteted content", async () => {
+      fakeToolApi.addContent("article", id, { headline: "Hej" });
+      let res = await fetch(`${baseUrl}/article/${id}`);
+      expect(res.status).to.eql(200);
+      res = await fetch(`${baseUrl}/article/${id}`, { method: "DELETE" });
+      expect(res.status).to.eql(200);
+      res = await fetch(`${baseUrl}/article/${id}`, { method: "DELETE" });
+      expect(res.status).to.eql(404);
+    });
+  });
+
   describe("#addContent", () => {
 
     it("should make content get:ble after adding it", async () => {

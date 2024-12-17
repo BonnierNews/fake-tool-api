@@ -733,7 +733,7 @@ async function deleteContent(req) {
     return [ 400 ];
   }
   const ofType = contentByType[type];
-  if (!ofType) {
+  if (!ofType || !ofType[id]) {
     return [ 404 ];
   }
   delete contentByType[type][id];
