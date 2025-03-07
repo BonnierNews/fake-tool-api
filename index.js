@@ -627,8 +627,10 @@ function slugsList(req) {
 }
 
 function autocomplete(req) {
+  if (!req.searchParams.get("keyword") || req.searchParams.get("keyword").length < 2) return [ 400 ];
+
   const type = req.params.type;
-  const q = req.searchParams.get("keyword");
+  const q = req.searchParams.get("keyword").trim().toLowerCase();
   const publishingGroup = req.searchParams.get("publishingGroup");
   const channel = req.searchParams.get("channel");
   const ofType = contentByType[type];
@@ -636,15 +638,15 @@ function autocomplete(req) {
     .map((id) => {
       return { id, content: ofType[id] };
     })
-    .filter(({ content }) => content.attributes.name.startsWith(q))
+    .filter(({ content }) => ` ${content.attributes.name.toLowerCase()}`.includes(` ${q}`))
     .filter(({ content }) => !publishingGroup || content.publishingGroup === publishingGroup)
-    .filter(({ content }) => !channel || content.attributes.channel === channel)
+    .filter(({ content }) => !channel || content.attributes.channel === channel || content.attributes.channels?.includes(channel))
     .map(({ id, content }) => {
       return {
         id,
         name: content.attributes.name,
         description: content.attributes.description,
-        channel: types[type].channelSpecific ? content.attributes.channel : undefined,
+        channels: types[type].channelSpecific ? [ content.attributes.channel ] : content.attributes.channels,
       };
     });
 
@@ -767,36 +769,25 @@ function search(req) {
 
   if (req.body.q) {
     const fields = [ "title", "text" ];
-    let parts = [];
-    if (req.body.prefixMatchAllTerms) {
-      parts = req.body.q
-        .split(" ")
-        .filter((p) => p.length > 0);
-    }
+    const queryTerms = req.body.q.trim().toLowerCase().split(/\s+/);
 
-    for (let i = 0; i < fields.length; i++) {
-      const field = fields[i];
-      matchingContent = matchingContent.filter((potentialHit) => {
-        if (!potentialHit[field]) {
-          return true;
-        }
-
-        const titleTokens = (potentialHit[field] || "")
-          .split(" ")
-          .filter((p) => p.length > 0)
-          .map((p) => p.toLowerCase());
-
-        if (parts.length > 0) {
-          return titleTokens.some((token) =>
-            parts.some((part) =>
-              token.toLocaleLowerCase().startsWith(part.toLocaleLowerCase())
-            )
-          );
-        }
-
-        return titleTokens.includes(req.body.q.toLocaleLowerCase());
+    matchingContent = matchingContent.filter((potentialHit) => {
+      const contentTokens = fields.flatMap((field) => {
+        return (potentialHit[field] || "")
+          .trim()
+          .toLowerCase()
+          .split(/\s+/);
       });
-    }
+      if (req.body.behavior === "prefix") {
+        return queryTerms.every((term) =>
+          contentTokens.some((contentToken) => contentToken.startsWith(term))
+        );
+      } else {
+        return queryTerms.some((term) =>
+          contentTokens.includes(term)
+        );
+      }
+    });
   }
 
   if (req.body.sort && Array.isArray(req.body.sort) && req.body.sort.length > 0) {

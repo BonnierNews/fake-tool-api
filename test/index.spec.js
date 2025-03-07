@@ -389,29 +389,81 @@ describe("Fake tool api", () => {
       expect(responseBody.hits[0].title).to.equal("banana");
     });
 
-    it("should find articles where any term starts with the search query using prefixMatchAllTerms", async () => {
+    it("should find articles where any term starts with the search query using prefix behavior", async () => {
       const content1Id = randomUUID();
       fakeToolApi.addContent("article", content1Id, { attributes: { name: "apple" } });
       const content2Id = randomUUID();
       fakeToolApi.addContent("article", content2Id, { attributes: { name: "bananas in pyjamas" } });
+      const content3Id = randomUUID();
+      fakeToolApi.addContent("article", content3Id, { attributes: { name: "pyjamas" } });
 
-      const response = await postJson(`${baseUrl}/search`, { q: "pyjam", prefixMatchAllTerms: true });
+      const response = await postJson(`${baseUrl}/search`, { q: "pyjam banan", behavior: "prefix" });
       expect(response.status).to.eql(200);
       const responseBody = await response.json();
       expect(responseBody.hits).to.have.length(1);
       expect(responseBody.hits[0].title).to.equal("bananas in pyjamas");
     });
 
-    it("should return no articles when no term starts with the search query using prefixMatchAllTerms", async () => {
+    it("should return no articles when no term starts with the search query using prefix behavior", async () => {
       const content1Id = randomUUID();
       fakeToolApi.addContent("article", content1Id, { attributes: { name: "apple" } });
       const content2Id = randomUUID();
       fakeToolApi.addContent("article", content2Id, { attributes: { name: "bananas in pyjamas" } });
 
-      const response = await postJson(`${baseUrl}/search`, { q: "pear", prefixMatchAllTerms: true });
+      const response = await postJson(`${baseUrl}/search`, { q: "pear", behavior: "prefix" });
       expect(response.status).to.eql(200);
       const responseBody = await response.json();
       expect(responseBody.hits).to.have.length(0);
+    });
+  });
+
+  describe("GET /:type/autocomplete", () => {
+    it("should require a search query", async () => {
+      const response = await fetch(`${baseUrl}/article/autocomplete`);
+      expect(response.status).to.eql(400);
+    });
+
+    it("should return matching content", async () => {
+      const channels = [ randomUUID(), randomUUID() ];
+      const content1Id = randomUUID();
+      fakeToolApi.addContent("article", content1Id, { attributes: { name: "banana melon kiwi lemon", channels } });
+      const content2Id = randomUUID();
+      fakeToolApi.addContent("article", content2Id, { attributes: { name: "orange" } });
+
+      const response = await fetch(`${baseUrl}/article/autocomplete?keyword=${encodeURIComponent("melon ki")}`);
+      const responseBody = await response.json();
+
+      expect(response.status).to.eql(200);
+      expect(responseBody).to.have.property("result");
+      expect(responseBody.result).to.have.length(1);
+      expect(responseBody.result[0]).to.deep.equal({
+        id: content1Id,
+        name: "banana melon kiwi lemon",
+        channels,
+      });
+    });
+
+    it("should filter matching content given channel", async () => {
+      const channels = [ randomUUID(), randomUUID() ];
+      const content1Id = randomUUID();
+      fakeToolApi.addContent("article", content1Id, { attributes: { name: "banana", channels } });
+      const content2Id = randomUUID();
+      fakeToolApi.addContent("article", content2Id, { attributes: { name: "banana", channel: channels[0] } });
+
+      const response1 = await fetch(`${baseUrl}/article/autocomplete?keyword=ban&channel=${channels[0]}`);
+      const responseBody1 = await response1.json();
+
+      expect(response1.status).to.eql(200);
+      expect(responseBody1).to.have.property("result");
+      expect(responseBody1.result).to.have.length(2);
+
+      const response2 = await fetch(`${baseUrl}/article/autocomplete?keyword=ban&channel=${channels[1]}`);
+      const responseBody2 = await response2.json();
+
+      expect(response2.status).to.eql(200);
+      expect(responseBody2).to.have.property("result");
+      expect(responseBody2.result).to.have.length(1);
+      expect(responseBody2.result[0].id).to.equal(content1Id);
     });
   });
 
