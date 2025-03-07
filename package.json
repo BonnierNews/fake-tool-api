@@ -20,9 +20,9 @@
   "license": "MIT",
   "files": ["index.js"],
   "devDependencies": {
-    "@bonniernews/eslint-config": "^1.1.0",
+    "@bonniernews/eslint-config": "^2.0.2",
     "chai": "^5.1.0",
-    "eslint": "^8.57.1",
+    "eslint": "^9.21.0",
     "mocha": "^11.0.0",
     "node-fetch": "^3.3.2"
   },
