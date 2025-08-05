@@ -124,10 +124,20 @@ export async function removeContent(type, id) {
 }
 
 export function addSlug(slug) {
+  console.log("awasdad")
   if (!slug.publishTime) {
     slug.publishTime = new Date();
   }
   slugs.push(slug);
+
+  const { valueType: type, value: id } = slug;
+  const valueContent = contentByType[type][id];
+
+  if (shouldSendPublishingEventMessage(types[type], valueContent)) {
+    console.log("🐐", "adsadsd");
+    sendEvent(type, id, "published");
+  }
+  console.log(JSON.stringify(slug, null, 2));
 }
 
 export function removeSlug(slug) {
@@ -531,6 +541,9 @@ function list(req) {
 }
 
 function requestSlug(req) {
+  console.log("sdfsfsdf", req)
+  console.log(JSON.stringify(types, null, 2));
+
   const slug = structuredClone(req.body || {});
 
   slug.channel = slug.channel || slug.channels[0];
@@ -556,11 +569,27 @@ function requestSlug(req) {
     slugs.push(slug);
   }
 
+  const { valueType: type, value: id } = slug;
+  const valueContent = contentByType[type][id];
+
+  if (shouldSendPublishingEventMessage(types[type], valueContent)) {
+    console.log("🐐", "adsadsd");
+    sendEvent(type, id, "published");
+  }
+
   const responseObject = {
     ids: [ slug.id ],
     path: slug.path,
   };
   return [ 200, responseObject ];
+}
+
+function shouldSendPublishingEventMessage(typeDefinition, valueContent) {
+  if (!valueContent) return false;
+  if (typeDefinition.hasPublishedState && valueContent.publishedState !== "PUBLISHED") return false;
+  if (valueContent.attributes.firstPublishTime && new Date(valueContent.attributes.firstPublishTime) > new Date()) return false;
+
+  return true;
 }
 
 function filterSlugsByValue(req) {

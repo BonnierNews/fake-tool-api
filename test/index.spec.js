@@ -508,6 +508,60 @@ describe("Fake tool api", () => {
       });
       expect(response.status).to.eql(200);
     });
+
+    it.only("should send update event if content exists on slug and slug is created after content", async () => {
+      fakeToolApi.clearBaseTypes();
+
+      const channelId = randomUUID();
+      const articleID = randomUUID();
+
+      fakeToolApi.addType({
+        name: "article",
+        properties: { attributes: { type: "object", properties: { name: { type: "string" }, headline: { type: "string" } } } },
+        canHaveSlugs: true,
+        hasPublishedState: true,
+      });
+
+      fakeToolApi.addType({
+        name: "section",
+        properties: { attributes: {type: "object", properties: { name: { type: "string" }} }},
+        canHaveSlugs: true
+      })
+
+      fakeToolApi.addContent("article", articleID, {
+        attributes: { headline: "Event?" },
+        publishedState: "PUBLISHED", firstPublishTime: new Date(Date.now() - 1000)
+      });
+      expect(events).to.have.length(1);
+      let articleMsg = events.pop();
+      expect(articleMsg).to.have.property("event", "published");
+      expect(articleMsg).to.have.property("id", articleID);
+      expect(articleMsg).to.have.property("type", "article");
+      expect(events).to.have.length(0);
+
+      let response = await postJson(`${baseUrl}/slug`, {
+        channels: [ channelId ],
+        desiredPath: "/test-path",
+        value: articleID,
+        valueType: "article"
+      });
+      expect(response.status).to.eql(200);
+      expect(events).to.have.length(1);
+      articleMsg = events.pop();
+      expect(articleMsg).to.have.property("event", "published");
+      expect(articleMsg).to.have.property("id", articleID);
+      expect(articleMsg).to.have.property("type", "article");
+      expect(events).to.have.length(0);
+
+      response = await postJson(`${baseUrl}/slug`, {
+        channels: [ channelId ],
+        desiredPath: "/test-path-faulty",
+        value: articleID,
+        valueType: "section"
+      });
+      expect(response.status).to.eql(200);
+      expect(events).to.have.length(0);
+    })
   });
 });
 
