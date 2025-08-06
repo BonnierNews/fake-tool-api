@@ -123,8 +123,8 @@ export async function removeContent(type, id) {
   await sendEvent(type, id, "unpublished");
 }
 
-export function addSlug(slug) {
-  console.log("awasdad")
+export async function addSlug(slug) {
+  //console.log("awasdad")
   if (!slug.publishTime) {
     slug.publishTime = new Date();
   }
@@ -134,10 +134,10 @@ export function addSlug(slug) {
   const valueContent = contentByType[type][id];
 
   if (shouldSendPublishingEventMessage(types[type], valueContent)) {
-    console.log("🐐", "adsadsd");
-    sendEvent(type, id, "published");
+    //console.log("🐐", "adsadsd");
+    await sendEvent(type, id, "published");
   }
-  console.log(JSON.stringify(slug, null, 2));
+  //console.log(JSON.stringify(slug, null, 2));
 }
 
 export function removeSlug(slug) {
@@ -540,9 +540,9 @@ function list(req) {
   return [ 200, responseBody ];
 }
 
-function requestSlug(req) {
-  console.log("sdfsfsdf", req)
-  console.log(JSON.stringify(types, null, 2));
+async function requestSlug(req) {
+  //console.log("sdfsfsdf", req)
+  //console.log(JSON.stringify(types, null, 2));
 
   const slug = structuredClone(req.body || {});
 
@@ -573,8 +573,8 @@ function requestSlug(req) {
   const valueContent = contentByType[type][id];
 
   if (shouldSendPublishingEventMessage(types[type], valueContent)) {
-    console.log("🐐", "adsadsd");
-    sendEvent(type, id, "published");
+    //console.log("🐐", "adsadsd");
+    await sendEvent(type, id, "published");
   }
 
   const responseObject = {
@@ -595,6 +595,9 @@ function shouldSendPublishingEventMessage(typeDefinition, valueContent) {
 function filterSlugsByValue(req) {
   const id = req.params.id;
   const filtered = slugs.filter((s) => s.value === id);
+  filtered.sort((a, b) => {
+    return b.publishTime.localeCompare(a.publishTime);
+  });
   return [ 200, { slugs: filtered } ];
 }
 
