@@ -477,6 +477,7 @@ describe("Fake tool api", () => {
         value: firstContentId,
         valueType: "content",
       });
+
       expect(response.status).to.eql(200);
 
       const secondContentId = randomUUID();
@@ -509,7 +510,7 @@ describe("Fake tool api", () => {
       expect(response.status).to.eql(200);
     });
 
-    it.only("should send update event if content exists on slug and slug is created after content", async () => {
+    it("should send update event if content exists on slug and slug is created after content", async () => {
       fakeToolApi.clearBaseTypes();
 
       const channelId = randomUUID();
@@ -524,13 +525,14 @@ describe("Fake tool api", () => {
 
       fakeToolApi.addType({
         name: "section",
-        properties: { attributes: {type: "object", properties: { name: { type: "string" }} }},
-        canHaveSlugs: true
-      })
+        properties: { attributes: { type: "object", properties: { name: { type: "string" } } } },
+        canHaveSlugs: true,
+      });
 
       fakeToolApi.addContent("article", articleID, {
         attributes: { headline: "Event?" },
-        publishedState: "PUBLISHED", firstPublishTime: new Date(Date.now() - 1000)
+        publishedState: "PUBLISHED",
+        firstPublishTime: new Date(Date.now() - 1000),
       });
       expect(events).to.have.length(1);
       let articleMsg = events.pop();
@@ -543,7 +545,7 @@ describe("Fake tool api", () => {
         channels: [ channelId ],
         desiredPath: "/test-path",
         value: articleID,
-        valueType: "article"
+        valueType: "article",
       });
       expect(response.status).to.eql(200);
       expect(events).to.have.length(1);
@@ -557,11 +559,11 @@ describe("Fake tool api", () => {
         channels: [ channelId ],
         desiredPath: "/test-path-faulty",
         value: articleID,
-        valueType: "section"
+        valueType: "section",
       });
       expect(response.status).to.eql(200);
       expect(events).to.have.length(0);
-    })
+    });
   });
 });
 

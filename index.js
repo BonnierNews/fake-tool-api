@@ -124,7 +124,6 @@ export async function removeContent(type, id) {
 }
 
 export async function addSlug(slug) {
-  //console.log("awasdad")
   if (!slug.publishTime) {
     slug.publishTime = new Date();
   }
@@ -132,12 +131,9 @@ export async function addSlug(slug) {
 
   const { valueType: type, value: id } = slug;
   const valueContent = contentByType[type][id];
-
   if (shouldSendPublishingEventMessage(types[type], valueContent)) {
-    //console.log("🐐", "adsadsd");
     await sendEvent(type, id, "published");
   }
-  //console.log(JSON.stringify(slug, null, 2));
 }
 
 export function removeSlug(slug) {
@@ -541,9 +537,6 @@ function list(req) {
 }
 
 async function requestSlug(req) {
-  //console.log("sdfsfsdf", req)
-  //console.log(JSON.stringify(types, null, 2));
-
   const slug = structuredClone(req.body || {});
 
   slug.channel = slug.channel || slug.channels[0];
@@ -558,7 +551,6 @@ async function requestSlug(req) {
   if (!slug.publishTime) {
     slug.publishTime = new Date().toISOString();
   }
-
   const matchingSlug = slugs.find((s) => s.channel === slug.channel && s.path === slug.path);
 
   if (matchingSlug && (matchingSlug.value !== slug.value || matchingSlug.valueType !== slug.valueType)) {
@@ -570,10 +562,9 @@ async function requestSlug(req) {
   }
 
   const { valueType: type, value: id } = slug;
-  const valueContent = contentByType[type][id];
+  const valueContent = contentByType[type] && contentByType[type][id];
 
   if (shouldSendPublishingEventMessage(types[type], valueContent)) {
-    //console.log("🐐", "adsadsd");
     await sendEvent(type, id, "published");
   }
 
