@@ -5,6 +5,8 @@ import { pathToRegexp, match } from "path-to-regexp";
 const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89abcd][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const routes = {
+  externalFilesGetSignedUploadUrl: buildRoute("/external-files/get-signed-upload-url", { get: getSignedUploadUrl }),
+  internalFilesGetSignedUploadUrl: buildRoute("/internal-files/get-signed-upload-url", { get: getSignedUploadUrl }),
   userSettings: buildRoute("/user-setting/:userId/:type/:key", {
     get: getUserSetting,
     put: putUserSetting,
@@ -830,4 +832,23 @@ function getVersion(req) {
 function getReferencedBy(req) {
   const { type, id } = req.params;
   return [ 200, referencedBy[type]?.[id] || [] ];
+}
+
+function getSignedUploadUrl(req) {
+  const kindOfFile = req.url.split("/")[1];
+  const filename = req.searchParams.get("filename");
+  const contentType = req.searchParams.get("contentType");
+  const filepath = `/${randomUUID()}/${filename}`;
+
+  const gcsBaseUrl = `https://gcs-${kindOfFile}-bucket`;
+
+  nock(gcsBaseUrl)
+    .intercept(filepath, "PUT")
+    .reply(200);
+
+  return [ 200, {
+    contentType: contentType || "application/octet-stream",
+    filepath,
+    url: `${gcsBaseUrl}${filepath}`,
+  } ];
 }

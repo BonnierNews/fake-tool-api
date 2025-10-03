@@ -509,6 +509,24 @@ describe("Fake tool api", () => {
       expect(response.status).to.eql(200);
     });
   });
+
+  describe("Files", () => {
+    [ "external-files", "internal-files" ].forEach((kindOfFile) => {
+      it(`should return a signed upload url for ${kindOfFile}`, async () => {
+        let res = await fetch(`${baseUrl}/${kindOfFile}/get-signed-upload-url?filename=foo.mp4&contentType=video%2Fmp4`);
+        expect(res.ok).to.be.true;
+        const data = await res.json();
+
+        expect(data).to.have.property("contentType", "video/mp4");
+        expect(data).to.have.property("filepath");
+        expect(data.filepath).to.match(/foo.mp4$/);
+        expect(data).to.have.property("url");
+        expect(data.url).to.match(new RegExp(`^https://gcs-${kindOfFile}-bucket/.*/foo.mp4$`));
+        res = await fetch(data.url, { method: "PUT" });
+        expect(res.ok).to.be.true;
+      });
+    });
+  });
 });
 
 async function postJson(url, obj) {
