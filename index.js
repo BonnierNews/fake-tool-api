@@ -125,11 +125,17 @@ export async function removeContent(type, id) {
   await sendEvent(type, id, "unpublished");
 }
 
-export function addSlug(slug) {
+export async function addSlug(slug) {
   if (!slug.publishTime) {
     slug.publishTime = new Date();
   }
   slugs.push(slug);
+
+  const { valueType: type, value: id } = slug;
+  const valueContent = contentByType[type][id];
+  if (shouldSendPublishingEventMessage(types[type], valueContent)) {
+    await sendEvent(type, id, "published");
+  }
 }
 
 export function removeSlug(slug) {
@@ -532,7 +538,7 @@ function list(req) {
   return [ 200, responseBody ];
 }
 
-function requestSlug(req) {
+async function requestSlug(req) {
   const slug = structuredClone(req.body || {});
 
   slug.channel = slug.channel || slug.channels[0];
@@ -547,7 +553,6 @@ function requestSlug(req) {
   if (!slug.publishTime) {
     slug.publishTime = new Date().toISOString();
   }
-
   const matchingSlug = slugs.find((s) => s.channel === slug.channel && s.path === slug.path);
 
   if (matchingSlug && (matchingSlug.value !== slug.value || matchingSlug.valueType !== slug.valueType)) {
@@ -558,6 +563,13 @@ function requestSlug(req) {
     slugs.push(slug);
   }
 
+  const { valueType: type, value: id } = slug;
+  const valueContent = contentByType[type] && contentByType[type][id];
+
+  if (shouldSendPublishingEventMessage(types[type], valueContent)) {
+    await sendEvent(type, id, "published");
+  }
+
   const responseObject = {
     ids: [ slug.id ],
     path: slug.path,
@@ -565,9 +577,20 @@ function requestSlug(req) {
   return [ 200, responseObject ];
 }
 
+function shouldSendPublishingEventMessage(typeDefinition, valueContent) {
+  if (!valueContent) return false;
+  if (typeDefinition.hasPublishedState && valueContent.publishedState !== "PUBLISHED") return false;
+  if (valueContent.attributes.firstPublishTime && new Date(valueContent.attributes.firstPublishTime) > new Date()) return false;
+
+  return true;
+}
+
 function filterSlugsByValue(req) {
   const id = req.params.id;
   const filtered = slugs.filter((s) => s.value === id);
+  filtered.sort((a, b) => {
+    return b.publishTime.localeCompare(a.publishTime);
+  });
   return [ 200, { slugs: filtered } ];
 }
 
