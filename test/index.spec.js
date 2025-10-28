@@ -397,11 +397,24 @@ describe("Fake tool api", () => {
       const content3Id = randomUUID();
       fakeToolApi.addContent("article", content3Id, { attributes: { name: "pyjamas" } });
 
-      const response = await postJson(`${baseUrl}/search`, { q: "pyjam banan", behavior: "prefix" });
+      const response = await postJson(`${baseUrl}/search`, { q: "pyjam* banan*", behavior: "prefix" });
       expect(response.status).to.eql(200);
       const responseBody = await response.json();
       expect(responseBody.hits).to.have.length(1);
       expect(responseBody.hits[0].title).to.equal("bananas in pyjamas");
+    });
+
+    it("should find articles with the phrase search query using prefix behavior", async () => {
+      const content1Id = randomUUID();
+      fakeToolApi.addContent("article", content1Id, { attributes: { name: "apple" } });
+      const content2Id = randomUUID();
+      fakeToolApi.addContent("article", content2Id, { attributes: { name: "Ö-viks hamnar" } });
+
+      const response = await postJson(`${baseUrl}/search`, { q: "\"Ö-v\"ik*", behavior: "prefix" });
+      expect(response.status).to.eql(200);
+      const responseBody = await response.json();
+      expect(responseBody.hits).to.have.length(1);
+      expect(responseBody.hits[0].title).to.equal("Ö-viks hamnar");
     });
 
     it("should return no articles when no term starts with the search query using prefix behavior", async () => {
@@ -410,7 +423,7 @@ describe("Fake tool api", () => {
       const content2Id = randomUUID();
       fakeToolApi.addContent("article", content2Id, { attributes: { name: "bananas in pyjamas" } });
 
-      const response = await postJson(`${baseUrl}/search`, { q: "pear", behavior: "prefix" });
+      const response = await postJson(`${baseUrl}/search`, { q: "pear*", behavior: "prefix" });
       expect(response.status).to.eql(200);
       const responseBody = await response.json();
       expect(responseBody.hits).to.have.length(0);
