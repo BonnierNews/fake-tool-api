@@ -804,9 +804,10 @@ function search(req) {
           .split(/\s+/);
       });
       if (req.body.behavior === "prefix") {
-        return queryTerms.every((term) =>
-          contentTokens.some((contentToken) => contentToken.startsWith(term))
-        );
+        return queryTerms.every((term) => {
+          const cleanTerm = term.replace(/\*+$/, "").replaceAll("\"", "");
+          return contentTokens.some((contentToken) => contentToken.startsWith(cleanTerm));
+        });
       } else {
         return queryTerms.some((term) =>
           contentTokens.includes(term)
