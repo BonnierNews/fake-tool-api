@@ -1,5 +1,5 @@
 import nock from "nock";
-import { randomUUID } from "crypto";
+import { randomUUID, randomBytes } from "crypto";
 import { pathToRegexp, match } from "path-to-regexp";
 
 const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89abcd][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -190,7 +190,7 @@ async function sendEvent(type, id, event) {
       id,
       updated: new Date(),
     })),
-    attributes: {},
+    attributes: { traceId: randomBytes(16).toString("hex") },
   };
   await pubSubListener(message);
 }
