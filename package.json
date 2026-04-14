@@ -1,6 +1,6 @@
 {
   "name": "@bonniernews/fake-tool-api",
-  "version": "1.7.0",
+  "version": "1.7.1",
   "type": "module",
   "description": "Mocked Bonnier News tool api, for use in automated tests",
   "main": "index.js",
@@ -18,7 +18,9 @@
     "lint": "eslint . --cache"
   },
   "license": "MIT",
-  "files": ["index.js"],
+  "files": [
+    "index.js"
+  ],
   "devDependencies": {
     "@bonniernews/eslint-config": "^2.0.2",
     "chai": "^5.1.0",
