@@ -6,8 +6,9 @@ import * as fakeToolApi from "../index.js";
 
 const baseUrl = "https://fake-tool-api-test";
 describe("Fake tool api", () => {
-
   const events = [];
+  const id = randomUUID();
+
   beforeEach(() => {
     fakeToolApi.init(baseUrl, (msg) => {
       events.push(JSON.parse(msg.data));
@@ -15,7 +16,6 @@ describe("Fake tool api", () => {
     fakeToolApi.addType({ name: "article" }, true);
     events.length = 0;
   });
-  const id = randomUUID();
 
   describe("working-copy", () => {
     it("should support PUT:ing working copy", async () => {
@@ -133,6 +133,52 @@ describe("Fake tool api", () => {
       const res = await fetch(`${baseUrl}/types`);
       const types = await res.json();
       expect(types[0].properties.attributes.properties).to.have.property("cool");
+    });
+  });
+
+  describe("#addSlug", () => {
+    it("should set default publishTime, if not given", async () => {
+      await fakeToolApi.addSlug({});
+
+      const slugs = fakeToolApi.peekSlugs();
+      expect(slugs).to.have.length(1);
+      expect(slugs[0]).to.have.property("publishTime");
+      expect(slugs[0].publishTime).to.be.a("string");
+    });
+  });
+
+  describe("#removeSlug", () => {
+    const channel = "channel";
+    beforeEach(() => {
+      [ 1, 2, 3 ].forEach(async (i) => {
+        await fakeToolApi.addSlug({
+          channel,
+          path: `/path-${i}`,
+          value: `value-${i}`,
+
+        });
+      });
+    });
+
+    it("should remove the given slug", () => {
+      const originalSlugs = fakeToolApi.peekSlugs();
+      expect(originalSlugs).to.have.length(3);
+
+      fakeToolApi.removeSlug({ channel, path: "/path-2", value: "value-2" });
+
+      const slugs = fakeToolApi.peekSlugs();
+      expect(slugs).to.have.length(2);
+      expect(slugs.find((slug) => slug.path === "/path-2")).to.not.exist;
+    });
+
+    it("should not remove non-existing slug", () => {
+      const originalSlugs = fakeToolApi.peekSlugs();
+      expect(originalSlugs).to.have.length(3);
+
+      fakeToolApi.removeSlug({ channel, path: "/non-existing-path", value: "value-2" });
+
+      const slugs = fakeToolApi.peekSlugs();
+      expect(slugs).to.have.length(3);
     });
   });
 
@@ -576,6 +622,64 @@ describe("Fake tool api", () => {
       });
       expect(response.status).to.eql(200);
       expect(events).to.have.length(0);
+    });
+  });
+
+  describe("GET /slug", () => {
+    it("should return existing slug", async () => {
+      await fakeToolApi.addSlug({ id });
+
+      const res = await fetch(`${baseUrl}/slug/${id}`);
+      expect(res.status).to.equal(200);
+
+      const data = await res.json();
+      expect(data).to.have.property("id", id);
+      expect(data).to.have.property("publishTime");
+    });
+
+    it("should return 404 for non-existing slug", async () => {
+      const res = await fetch(`${baseUrl}/slug/${id}`);
+      expect(res.status).to.equal(404);
+    });
+  });
+
+  describe("GET /slug/byValue", () => {
+    it("should return existing slugs, sorted by publishTime", async () => {
+      const articleId = randomUUID();
+      const slugId1 = randomUUID();
+      const slugId2 = randomUUID();
+      const publishTime1 = "2024-01-01T09:00:00.000Z";
+      const publishTime2 = "2024-01-01T11:00:00.000Z";
+
+      await fakeToolApi.addSlug({ id: slugId1, value: articleId, publishTime: publishTime1 });
+      await fakeToolApi.addSlug({ id: slugId2, value: articleId, publishTime: publishTime2 });
+
+      const res = await fetch(`${baseUrl}/slug/byValue/${articleId}`);
+      expect(res.status).to.equal(200);
+
+      const data = await res.json();
+      expect(data).to.deep.equal({
+        slugs: [
+          {
+            id: slugId2,
+            value: articleId,
+            publishTime: publishTime2,
+          },
+          {
+            id: slugId1,
+            value: articleId,
+            publishTime: publishTime1,
+          },
+        ],
+      });
+    });
+
+    it("should return the empty array for non-existing article GUID", async () => {
+      const res = await fetch(`${baseUrl}/slug/byValue/${id}`);
+      expect(res.status).to.equal(200);
+
+      const data = await res.json();
+      expect(data).to.deep.equal({ slugs: [] });
     });
   });
 

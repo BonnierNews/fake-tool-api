@@ -36,8 +36,16 @@ const routes = {
   }),
 };
 
-let types, contentByType, workingCopiesByType = {}, userSettings, slugs = [], versionsMeta = {}, versions = {}, referencedBy = {}, baseUrl;
-let interceptor = () => { };
+let types;
+let contentByType;
+let workingCopiesByType = {};
+let userSettings;
+let slugs = [];
+let versionsMeta = {};
+let versions = {};
+let referencedBy = {};
+let baseUrl;
+let interceptor = () => {};
 
 function buildRoute(route, handlers) {
   return {
@@ -83,7 +91,7 @@ export function intercept(interceptFn) {
   interceptor = interceptFn || (() => { });
 }
 
-// resets content an initialize basic types ()
+// Resets content and initializes basic types
 export function resetContent() {
   initBasetypes();
   slugs = [];
@@ -126,12 +134,14 @@ export async function removeContent(type, id) {
 }
 
 export async function addSlug(slug) {
-  if (!slug.publishTime) {
-    slug.publishTime = new Date();
+  const { valueType, value: id, publishTime } = slug;
+  const type = valueType || "article";
+
+  if (!publishTime) {
+    slug.publishTime = new Date().toISOString();
   }
   slugs.push(slug);
 
-  const { valueType: type, value: id } = slug;
   const valueContent = contentByType[type][id];
   if (shouldSendPublishingEventMessage(types[type], valueContent)) {
     await sendEvent(type, id, "published");
@@ -144,6 +154,7 @@ export function removeSlug(slug) {
     && p.value === slug.value
     && p.path === slug.path));
 }
+
 export function addType(type, allowRedefine = false) {
   if (!type.properties) {
     type.properties = {};
@@ -505,23 +516,27 @@ function list(req) {
       return excludeTypes.indexOf(item.type) === -1;
     });
   }
+
   const filterTypes = req.searchParams.getAll("type");
   if (filterTypes.length > 0) {
     items = items.filter((item) => filterTypes.includes(item.type));
   }
 
   const orgLength = items.length;
-
   let responseItems = items;
+
   const from = req.searchParams.get("cursor");
   if (from) {
     items = items.slice(parseInt(from));
   }
+
   const size = req.searchParams.get("size");
   if (size) {
     responseItems = items.slice(0, parseInt(size));
   }
-  let nextCursor, nextUrl;
+
+  let nextCursor;
+  let nextUrl;
   if (responseItems.length < items.length) {
     nextCursor = orgLength - (items.length - responseItems.length);
     const nextUrlObj = new URL(req.url, baseUrl);
@@ -529,11 +544,13 @@ function list(req) {
     nextUrl = nextUrlObj.toString();
 
   }
+
   responseItems = JSON.parse(JSON.stringify(responseItems));
   responseItems.forEach((item) => {
     item.sequenceNumber = item.content.sequenceNumber;
     delete item.content.sequenceNumber;
   });
+
   const responseBody = { items: responseItems, nextCursor, next: nextUrl };
   return [ 200, responseBody ];
 }
@@ -578,7 +595,7 @@ async function requestSlug(req) {
 }
 
 function shouldSendPublishingEventMessage(typeDefinition, valueContent) {
-  if (!valueContent) return false;
+  if (!typeDefinition || !valueContent || !valueContent.attributes) return false;
   if (typeDefinition.hasPublishedState && valueContent.publishedState !== "PUBLISHED") return false;
   if (valueContent.attributes.firstPublishTime && new Date(valueContent.attributes.firstPublishTime) > new Date()) return false;
 
@@ -635,19 +652,23 @@ function slugsList(req) {
   if (channel) {
     items = items.filter((item) => item.channel === channel);
   }
+
   const path = req.searchParams.get("path");
   if (path) {
     items = items.filter((item) => item.path === path);
   }
+
   const valueType = req.searchParams.get("valueType");
   if (valueType) {
     items = items.filter((item) => item.valueType === valueType);
   }
+
   const value = req.searchParams.get("value");
   if (value) {
     items = items.filter((item) => item.value === value);
   }
-  const responseBody = { items/* , next*/ };
+
+  const responseBody = { items };
   return [ 200, responseBody ];
 }
 
