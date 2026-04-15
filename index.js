@@ -139,7 +139,10 @@ export async function addSlug(slug) {
 
   if (!publishTime) {
     slug.publishTime = new Date().toISOString();
+  } else if (publishTime instanceof Date) {
+    slug.publishTime = publishTime.toISOString();
   }
+
   slugs.push(slug);
 
   const valueContent = contentByType[type][id];
