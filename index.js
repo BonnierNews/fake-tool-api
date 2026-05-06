@@ -1,5 +1,5 @@
 import nock from "nock";
-import { randomUUID } from "crypto";
+import { randomUUID, randomBytes } from "crypto";
 import { pathToRegexp, match } from "path-to-regexp";
 
 const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89abcd][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -139,7 +139,10 @@ export async function addSlug(slug) {
 
   if (!publishTime) {
     slug.publishTime = new Date().toISOString();
+  } else if (publishTime instanceof Date) {
+    slug.publishTime = publishTime.toISOString();
   }
+
   slugs.push(slug);
 
   const valueContent = contentByType[type][id];
@@ -190,7 +193,7 @@ async function sendEvent(type, id, event) {
       id,
       updated: new Date(),
     })),
-    attributes: {},
+    attributes: { traceId: randomBytes(16).toString("hex") },
   };
   await pubSubListener(message);
 }

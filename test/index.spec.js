@@ -648,11 +648,17 @@ describe("Fake tool api", () => {
       const articleId = randomUUID();
       const slugId1 = randomUUID();
       const slugId2 = randomUUID();
+      const slugId3 = randomUUID();
+      const slugId4 = randomUUID();
       const publishTime1 = "2024-01-01T09:00:00.000Z";
       const publishTime2 = "2024-01-01T11:00:00.000Z";
+      const publishTime3 = new Date("2024-01-01T10:00:00.000Z");
+      const publishTime4 = new Date("2024-01-01T12:00:00.000Z");
 
       await fakeToolApi.addSlug({ id: slugId1, value: articleId, publishTime: publishTime1 });
       await fakeToolApi.addSlug({ id: slugId2, value: articleId, publishTime: publishTime2 });
+      await fakeToolApi.addSlug({ id: slugId3, value: articleId, publishTime: publishTime3 });
+      await fakeToolApi.addSlug({ id: slugId4, value: articleId, publishTime: publishTime4 });
 
       const res = await fetch(`${baseUrl}/slug/byValue/${articleId}`);
       expect(res.status).to.equal(200);
@@ -661,9 +667,19 @@ describe("Fake tool api", () => {
       expect(data).to.deep.equal({
         slugs: [
           {
+            id: slugId4,
+            value: articleId,
+            publishTime: publishTime4.toISOString(),
+          },
+          {
             id: slugId2,
             value: articleId,
             publishTime: publishTime2,
+          },
+          {
+            id: slugId3,
+            value: articleId,
+            publishTime: publishTime3.toISOString(),
           },
           {
             id: slugId1,
