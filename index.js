@@ -800,12 +800,13 @@ function search(req) {
     const ofType = contentByType[typeName];
     const ids = Object.keys(ofType);
 
-    return ids.map((id) => {
+    return ids.filter((id) => matchesSearchFilters(req.body, types[typeName], ofType[id])).map((id) => {
       const content = ofType[id];
       const hit = {
         type: typeName,
         id,
         title: content.attributes?.name,
+        channels: searchChannels(types[typeName], content),
       };
 
       if (req.body.returnContent) {
@@ -861,6 +862,52 @@ function search(req) {
   }
 
   return [ 200, { hits: matchingContent.slice(from, size), total: matchingContent.length } ];
+}
+
+// Mirrors the real tool-api's search filters (lib/search/filters.js): channel and
+// publishing group filters match content whose value is among the requested ones
+// OR that lacks the field entirely (global content), while the explicit activeStatus
+// values narrow on the active flag.
+function matchesSearchFilters(searchQuery, typeDefinition, content) {
+  if (searchQuery.channels?.length) {
+    const channels = searchChannels(typeDefinition, content);
+    const matchesChannel = [].concat(channels ?? []).some((channel) => searchQuery.channels.includes(channel));
+    if (channels !== undefined && !matchesChannel) {
+      return false;
+    }
+  }
+
+  if (searchQuery.publishingGroups?.length) {
+    if (content.publishingGroup !== undefined && !searchQuery.publishingGroups.includes(content.publishingGroup)) {
+      return false;
+    }
+  }
+
+  if (searchQuery.activeStatus === "ACTIVE" && content.active !== true) {
+    return false;
+  }
+  if (searchQuery.activeStatus === "INACTIVE" && content.active === true) {
+    return false;
+  }
+
+  return true;
+}
+
+// Mirrors extractSearchChannels in the real tool-api's search indexing:
+// channelSpecific types index [attributes.channel], types with a channels property
+// index attributes.channels ("" when unset, which unlike undefined does NOT match
+// a channel filter), and all other types index nothing (matches any channel filter).
+function searchChannels(typeDefinition, content) {
+  if (typeDefinition?.channelSpecific) {
+    return [ content.attributes?.channel ];
+  }
+  if (typeDefinition?.properties?.attributes?.properties?.channels) {
+    if (!content.attributes?.channels?.length) {
+      return "";
+    }
+    return content.attributes.channels;
+  }
+  return undefined;
 }
 
 function getTypes() {
