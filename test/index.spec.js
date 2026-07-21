@@ -474,6 +474,126 @@ describe("Fake tool api", () => {
       const responseBody = await response.json();
       expect(responseBody.hits).to.have.length(0);
     });
+
+    describe("filtering by channels", () => {
+      it("should filter channel specific content on its channel attribute", async () => {
+        fakeToolApi.addType({
+          name: "channel-specific-type",
+          channelSpecific: true,
+          properties: { attributes: { type: "object", properties: { name: { type: "string" } } } },
+        });
+        const channelAId = randomUUID();
+        const channelBId = randomUUID();
+        const inAId = randomUUID();
+        fakeToolApi.addContent("channel-specific-type", inAId, { attributes: { name: "in a", channel: channelAId } });
+        const inBId = randomUUID();
+        fakeToolApi.addContent("channel-specific-type", inBId, { attributes: { name: "in b", channel: channelBId } });
+
+        const response = await postJson(`${baseUrl}/search`, { channels: [ channelAId ] });
+        expect(response.status).to.eql(200);
+        const responseBody = await response.json();
+        expect(responseBody.hits.map((hit) => hit.id)).to.eql([ inAId ]);
+        expect(responseBody.hits[0].channels).to.eql([ channelAId ]);
+      });
+
+      it("should filter content with a channels attribute on any of its channels", async () => {
+        fakeToolApi.addType({
+          name: "multi-channel-type",
+          properties: {
+            attributes: {
+              type: "object",
+              properties: {
+                name: { type: "string" },
+                channels: { type: "references", referenceType: "channel" },
+              },
+            },
+          },
+        });
+        const channelAId = randomUUID();
+        const channelBId = randomUUID();
+        const inABId = randomUUID();
+        fakeToolApi.addContent("multi-channel-type", inABId, { attributes: { name: "in ab", channels: [ channelAId, channelBId ] } });
+        const inAId = randomUUID();
+        fakeToolApi.addContent("multi-channel-type", inAId, { attributes: { name: "in a", channels: [ channelAId ] } });
+        const withoutChannelsId = randomUUID();
+        fakeToolApi.addContent("multi-channel-type", withoutChannelsId, { attributes: { name: "without channels", channels: [] } });
+
+        const response = await postJson(`${baseUrl}/search`, { channels: [ channelBId ] });
+        expect(response.status).to.eql(200);
+        const responseBody = await response.json();
+        expect(responseBody.hits.map((hit) => hit.id)).to.eql([ inABId ]);
+      });
+
+      it("should let content of types without channels match any channel filter", async () => {
+        const channelId = randomUUID();
+        const articleId = randomUUID();
+        fakeToolApi.addContent("article", articleId, { attributes: { name: "global article" } });
+
+        const response = await postJson(`${baseUrl}/search`, { channels: [ channelId ] });
+        expect(response.status).to.eql(200);
+        const responseBody = await response.json();
+        expect(responseBody.hits.map((hit) => hit.id)).to.include(articleId);
+      });
+    });
+
+    describe("filtering by publishing groups", () => {
+      it("should filter publishing group specific content, letting content without publishing group match", async () => {
+        fakeToolApi.addType({
+          name: "pg-specific-type",
+          publishingGroupSpecific: true,
+          properties: { attributes: { type: "object", properties: { name: { type: "string" } } } },
+        });
+        const pg1Id = randomUUID();
+        const pg2Id = randomUUID();
+        const inPg1Id = randomUUID();
+        fakeToolApi.addContent("pg-specific-type", inPg1Id, { attributes: { name: "in pg1" }, publishingGroup: pg1Id });
+        const inPg2Id = randomUUID();
+        fakeToolApi.addContent("pg-specific-type", inPg2Id, { attributes: { name: "in pg2" }, publishingGroup: pg2Id });
+        const globalArticleId = randomUUID();
+        fakeToolApi.addContent("article", globalArticleId, { attributes: { name: "global article" } });
+
+        const response = await postJson(`${baseUrl}/search`, { publishingGroups: [ pg1Id ] });
+        expect(response.status).to.eql(200);
+        const responseBody = await response.json();
+        const ids = responseBody.hits.map((hit) => hit.id);
+        expect(ids).to.include(inPg1Id);
+        expect(ids).to.include(globalArticleId);
+        expect(ids).to.not.include(inPg2Id);
+      });
+    });
+
+    describe("filtering by active status", () => {
+      let activeId, inactiveId;
+      beforeEach(() => {
+        activeId = randomUUID();
+        fakeToolApi.addContent("article", activeId, { attributes: { name: "active article" }, active: true });
+        inactiveId = randomUUID();
+        fakeToolApi.addContent("article", inactiveId, { attributes: { name: "inactive article" }, active: false });
+      });
+
+      it("should only return active content for activeStatus ACTIVE", async () => {
+        const response = await postJson(`${baseUrl}/search`, { activeStatus: "ACTIVE" });
+        expect(response.status).to.eql(200);
+        const responseBody = await response.json();
+        expect(responseBody.hits.map((hit) => hit.id)).to.eql([ activeId ]);
+      });
+
+      it("should only return content that is not active for activeStatus INACTIVE", async () => {
+        const response = await postJson(`${baseUrl}/search`, { activeStatus: "INACTIVE" });
+        expect(response.status).to.eql(200);
+        const responseBody = await response.json();
+        expect(responseBody.hits.map((hit) => hit.id)).to.eql([ inactiveId ]);
+      });
+
+      it("should return all content for activeStatus BOTH", async () => {
+        const response = await postJson(`${baseUrl}/search`, { activeStatus: "BOTH" });
+        expect(response.status).to.eql(200);
+        const responseBody = await response.json();
+        const ids = responseBody.hits.map((hit) => hit.id);
+        expect(ids).to.include(activeId);
+        expect(ids).to.include(inactiveId);
+      });
+    });
   });
 
   describe("GET /:type/autocomplete", () => {
