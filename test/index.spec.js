@@ -309,30 +309,36 @@ describe("Fake tool api", () => {
   });
 
   describe("POST /search", () => {
-    it("should return unfiltered results when posting empty object", async () => {
-      const content1Id = randomUUID();
-      fakeToolApi.addContent("article", content1Id, { attributes: { name: "banana" } });
-      const content2Id = randomUUID();
-      fakeToolApi.addContent("article", content2Id, { attributes: { name: "orange" } });
+    it("should default to active content when posting empty object", async () => {
+      const activeContentId = randomUUID();
+      fakeToolApi.addContent("article", activeContentId, { attributes: { name: "banana" }, active: true });
+      const inactiveContentId = randomUUID();
+      fakeToolApi.addContent("article", inactiveContentId, { attributes: { name: "orange" }, active: false });
+      const missingActiveContentId = randomUUID();
+      fakeToolApi.addContent("article", missingActiveContentId, { attributes: { name: "pear" } });
 
       const response = await postJson(`${baseUrl}/search`, {});
       const responseBody = await response.json();
 
       expect(response.status).to.eql(200);
       expect(responseBody).to.have.property("hits");
-      const content1Hit = responseBody.hits.find((hit) => hit.id === content1Id);
-      expect(content1Hit).to.exist;
-      expect(content1Hit).to.have.property("type", "article");
-      expect(content1Hit).to.have.property("title", "banana");
-      expect(content1Hit).to.not.have.property("content");
-      expect(responseBody).to.have.property("total", 2);
+      const activeContentHit = responseBody.hits.find((hit) => hit.id === activeContentId);
+      const inactiveContentHit = responseBody.hits.find((hit) => hit.id === inactiveContentId);
+      const missingActiveContentHit = responseBody.hits.find((hit) => hit.id === missingActiveContentId);
+      expect(activeContentHit).to.exist;
+      expect(activeContentHit).to.have.property("type", "article");
+      expect(activeContentHit).to.have.property("title", "banana");
+      expect(activeContentHit).to.not.have.property("content");
+      expect(inactiveContentHit).to.not.exist;
+      expect(missingActiveContentHit).to.not.exist;
+      expect(responseBody).to.have.property("total", 1);
     });
 
     it("should filter by text query in attributes.name field", async () => {
       const matchingId = randomUUID();
-      fakeToolApi.addContent("article", matchingId, { attributes: { name: "banana " } });
+      fakeToolApi.addContent("article", matchingId, { attributes: { name: "banana " }, active: true });
       const notMatchingId = randomUUID();
-      fakeToolApi.addContent("article", notMatchingId, { attributes: { name: "orange " } });
+      fakeToolApi.addContent("article", notMatchingId, { attributes: { name: "orange " }, active: true });
 
       const response = await postJson(`${baseUrl}/search`, { q: "banana" });
       const responseBody = await response.json();
@@ -342,9 +348,9 @@ describe("Fake tool api", () => {
 
     it("should include content when returnContent: true", async () => {
       const content1Id = randomUUID();
-      fakeToolApi.addContent("article", content1Id, { attributes: { name: "banana" } });
+      fakeToolApi.addContent("article", content1Id, { attributes: { name: "banana" }, active: true });
       const content2Id = randomUUID();
-      fakeToolApi.addContent("article", content2Id, { attributes: { name: "orange" } });
+      fakeToolApi.addContent("article", content2Id, { attributes: { name: "orange" }, active: true });
 
       const response = await postJson(`${baseUrl}/search`, { returnContent: true });
       const responseBody = await response.json();
@@ -360,11 +366,11 @@ describe("Fake tool api", () => {
 
     it("should support filtering by type", async () => {
       const channelId = randomUUID();
-      fakeToolApi.addContent("channel", channelId, { attributes: { name: "name" } });
+      fakeToolApi.addContent("channel", channelId, { attributes: { name: "name" }, active: true });
       const publishingGroupId = randomUUID();
-      fakeToolApi.addContent("publishing-group", publishingGroupId, { attributes: { name: "name" } });
+      fakeToolApi.addContent("publishing-group", publishingGroupId, { attributes: { name: "name" }, active: true });
       const articleId = randomUUID();
-      fakeToolApi.addContent("article", articleId, { attributes: { name: "name" } });
+      fakeToolApi.addContent("article", articleId, { attributes: { name: "name" }, active: true });
 
       const response = await postJson(`${baseUrl}/search`, { types: [ "publishing-group", "channel" ] });
       const responseBody = await response.json();
@@ -379,9 +385,9 @@ describe("Fake tool api", () => {
 
     it("should support sorting by given text attribute in ascending order", async () => {
       const content1Id = randomUUID();
-      fakeToolApi.addContent("article", content1Id, { attributes: { name: "banana" } });
+      fakeToolApi.addContent("article", content1Id, { attributes: { name: "banana" }, active: true });
       const content2Id = randomUUID();
-      fakeToolApi.addContent("article", content2Id, { attributes: { name: "apple" } });
+      fakeToolApi.addContent("article", content2Id, { attributes: { name: "apple" }, active: true });
 
       const response = await postJson(`${baseUrl}/search`, { sort: [ { by: "title", order: "asc" } ] });
       const responseBody = await response.json();
@@ -396,9 +402,9 @@ describe("Fake tool api", () => {
 
     it("should support sorting by given text attribute in descending order", async () => {
       const content1Id = randomUUID();
-      fakeToolApi.addContent("article", content1Id, { attributes: { name: "apple" } });
+      fakeToolApi.addContent("article", content1Id, { attributes: { name: "apple" }, active: true });
       const content2Id = randomUUID();
-      fakeToolApi.addContent("article", content2Id, { attributes: { name: "banana" } });
+      fakeToolApi.addContent("article", content2Id, { attributes: { name: "banana" }, active: true });
 
       const response = await postJson(`${baseUrl}/search`, { sort: [ { by: "title", order: "desc" } ] });
       const responseBody = await response.json();
@@ -413,9 +419,9 @@ describe("Fake tool api", () => {
 
     it("should return number of hits based on size parameter", async () => {
       const content1Id = randomUUID();
-      fakeToolApi.addContent("article", content1Id, { attributes: { name: "apple" } });
+      fakeToolApi.addContent("article", content1Id, { attributes: { name: "apple" }, active: true });
       const content2Id = randomUUID();
-      fakeToolApi.addContent("article", content2Id, { attributes: { name: "banana" } });
+      fakeToolApi.addContent("article", content2Id, { attributes: { name: "banana" }, active: true });
       const response = await postJson(`${baseUrl}/search`, { size: 1 });
       expect(response.status).to.eql(200);
       const responseBody = await response.json();
@@ -425,9 +431,9 @@ describe("Fake tool api", () => {
 
     it("should support paging through results", async () => {
       const content1Id = randomUUID();
-      fakeToolApi.addContent("article", content1Id, { attributes: { name: "apple" } });
+      fakeToolApi.addContent("article", content1Id, { attributes: { name: "apple" }, active: true });
       const content2Id = randomUUID();
-      fakeToolApi.addContent("article", content2Id, { attributes: { name: "banana" } });
+      fakeToolApi.addContent("article", content2Id, { attributes: { name: "banana" }, active: true });
       const response = await postJson(`${baseUrl}/search`, { from: 1, size: 1 });
       expect(response.status).to.eql(200);
       const responseBody = await response.json();
@@ -437,11 +443,11 @@ describe("Fake tool api", () => {
 
     it("should find articles where any term starts with the search query using prefix behavior", async () => {
       const content1Id = randomUUID();
-      fakeToolApi.addContent("article", content1Id, { attributes: { name: "apple" } });
+      fakeToolApi.addContent("article", content1Id, { attributes: { name: "apple" }, active: true });
       const content2Id = randomUUID();
-      fakeToolApi.addContent("article", content2Id, { attributes: { name: "bananas in pyjamas" } });
+      fakeToolApi.addContent("article", content2Id, { attributes: { name: "bananas in pyjamas" }, active: true });
       const content3Id = randomUUID();
-      fakeToolApi.addContent("article", content3Id, { attributes: { name: "pyjamas" } });
+      fakeToolApi.addContent("article", content3Id, { attributes: { name: "pyjamas" }, active: true });
 
       const response = await postJson(`${baseUrl}/search`, { q: "pyjam* banan*", behavior: "prefix" });
       expect(response.status).to.eql(200);
@@ -452,9 +458,9 @@ describe("Fake tool api", () => {
 
     it("should find articles with the phrase search query using prefix behavior", async () => {
       const content1Id = randomUUID();
-      fakeToolApi.addContent("article", content1Id, { attributes: { name: "apple" } });
+      fakeToolApi.addContent("article", content1Id, { attributes: { name: "apple" }, active: true });
       const content2Id = randomUUID();
-      fakeToolApi.addContent("article", content2Id, { attributes: { name: "Ö-viks hamnar" } });
+      fakeToolApi.addContent("article", content2Id, { attributes: { name: "Ö-viks hamnar" }, active: true });
 
       const response = await postJson(`${baseUrl}/search`, { q: "\"Ö-v\"ik*", behavior: "prefix" });
       expect(response.status).to.eql(200);
@@ -465,9 +471,9 @@ describe("Fake tool api", () => {
 
     it("should return no articles when no term starts with the search query using prefix behavior", async () => {
       const content1Id = randomUUID();
-      fakeToolApi.addContent("article", content1Id, { attributes: { name: "apple" } });
+      fakeToolApi.addContent("article", content1Id, { attributes: { name: "apple" }, active: true });
       const content2Id = randomUUID();
-      fakeToolApi.addContent("article", content2Id, { attributes: { name: "bananas in pyjamas" } });
+      fakeToolApi.addContent("article", content2Id, { attributes: { name: "bananas in pyjamas" }, active: true });
 
       const response = await postJson(`${baseUrl}/search`, { q: "pear*", behavior: "prefix" });
       expect(response.status).to.eql(200);
@@ -485,9 +491,9 @@ describe("Fake tool api", () => {
         const channelAId = randomUUID();
         const channelBId = randomUUID();
         const inAId = randomUUID();
-        fakeToolApi.addContent("channel-specific-type", inAId, { attributes: { name: "in a", channel: channelAId } });
+        fakeToolApi.addContent("channel-specific-type", inAId, { attributes: { name: "in a", channel: channelAId }, active: true });
         const inBId = randomUUID();
-        fakeToolApi.addContent("channel-specific-type", inBId, { attributes: { name: "in b", channel: channelBId } });
+        fakeToolApi.addContent("channel-specific-type", inBId, { attributes: { name: "in b", channel: channelBId }, active: true });
 
         const response = await postJson(`${baseUrl}/search`, { channels: [ channelAId ] });
         expect(response.status).to.eql(200);
@@ -512,11 +518,11 @@ describe("Fake tool api", () => {
         const channelAId = randomUUID();
         const channelBId = randomUUID();
         const inABId = randomUUID();
-        fakeToolApi.addContent("multi-channel-type", inABId, { attributes: { name: "in ab", channels: [ channelAId, channelBId ] } });
+        fakeToolApi.addContent("multi-channel-type", inABId, { attributes: { name: "in ab", channels: [ channelAId, channelBId ] }, active: true });
         const inAId = randomUUID();
-        fakeToolApi.addContent("multi-channel-type", inAId, { attributes: { name: "in a", channels: [ channelAId ] } });
+        fakeToolApi.addContent("multi-channel-type", inAId, { attributes: { name: "in a", channels: [ channelAId ] }, active: true });
         const withoutChannelsId = randomUUID();
-        fakeToolApi.addContent("multi-channel-type", withoutChannelsId, { attributes: { name: "without channels", channels: [] } });
+        fakeToolApi.addContent("multi-channel-type", withoutChannelsId, { attributes: { name: "without channels", channels: [] }, active: true });
 
         const response = await postJson(`${baseUrl}/search`, { channels: [ channelBId ] });
         expect(response.status).to.eql(200);
@@ -527,7 +533,7 @@ describe("Fake tool api", () => {
       it("should let content of types without channels match any channel filter", async () => {
         const channelId = randomUUID();
         const articleId = randomUUID();
-        fakeToolApi.addContent("article", articleId, { attributes: { name: "global article" } });
+        fakeToolApi.addContent("article", articleId, { attributes: { name: "global article" }, active: true });
 
         const response = await postJson(`${baseUrl}/search`, { channels: [ channelId ] });
         expect(response.status).to.eql(200);
@@ -546,11 +552,11 @@ describe("Fake tool api", () => {
         const pg1Id = randomUUID();
         const pg2Id = randomUUID();
         const inPg1Id = randomUUID();
-        fakeToolApi.addContent("pg-specific-type", inPg1Id, { attributes: { name: "in pg1" }, publishingGroup: pg1Id });
+        fakeToolApi.addContent("pg-specific-type", inPg1Id, { attributes: { name: "in pg1" }, publishingGroup: pg1Id, active: true });
         const inPg2Id = randomUUID();
-        fakeToolApi.addContent("pg-specific-type", inPg2Id, { attributes: { name: "in pg2" }, publishingGroup: pg2Id });
+        fakeToolApi.addContent("pg-specific-type", inPg2Id, { attributes: { name: "in pg2" }, publishingGroup: pg2Id, active: true });
         const globalArticleId = randomUUID();
-        fakeToolApi.addContent("article", globalArticleId, { attributes: { name: "global article" } });
+        fakeToolApi.addContent("article", globalArticleId, { attributes: { name: "global article" }, active: true });
 
         const response = await postJson(`${baseUrl}/search`, { publishingGroups: [ pg1Id ] });
         expect(response.status).to.eql(200);
@@ -579,19 +585,29 @@ describe("Fake tool api", () => {
       });
 
       it("should only return content that is not active for activeStatus INACTIVE", async () => {
+        const missingActiveId = randomUUID();
+        fakeToolApi.addContent("article", missingActiveId, { attributes: { name: "unknown status article" } });
+
         const response = await postJson(`${baseUrl}/search`, { activeStatus: "INACTIVE" });
         expect(response.status).to.eql(200);
         const responseBody = await response.json();
-        expect(responseBody.hits.map((hit) => hit.id)).to.eql([ inactiveId ]);
+        const ids = responseBody.hits.map((hit) => hit.id);
+        expect(ids).to.include(inactiveId);
+        expect(ids).to.include(missingActiveId);
+        expect(ids).to.not.include(activeId);
       });
 
       it("should return all content for activeStatus BOTH", async () => {
+        const unknownStatusId = randomUUID();
+        fakeToolApi.addContent("article", unknownStatusId, { attributes: { name: "unknown status article" } });
+
         const response = await postJson(`${baseUrl}/search`, { activeStatus: "BOTH" });
         expect(response.status).to.eql(200);
         const responseBody = await response.json();
         const ids = responseBody.hits.map((hit) => hit.id);
         expect(ids).to.include(activeId);
         expect(ids).to.include(inactiveId);
+        expect(ids).to.include(unknownStatusId);
       });
     });
   });
