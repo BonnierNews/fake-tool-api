@@ -866,8 +866,8 @@ function search(req) {
 
 // Mirrors the real tool-api's search filters (lib/search/filters.js): channel and
 // publishing group filters match content whose value is among the requested ones
-// OR that lacks the field entirely (global content), while the explicit activeStatus
-// values narrow on the active flag.
+// OR that lacks the field entirely (global content). Active filtering is
+// controlled by explicit activeStatus values.
 function matchesSearchFilters(searchQuery, typeDefinition, content) {
   if (searchQuery.channels?.length) {
     const channels = searchChannels(typeDefinition, content);
@@ -887,6 +887,9 @@ function matchesSearchFilters(searchQuery, typeDefinition, content) {
     return false;
   }
   if (searchQuery.activeStatus === "INACTIVE" && content.active === true) {
+    return false;
+  }
+  if (!searchQuery.activeStatus && content.active !== true) {
     return false;
   }
 
