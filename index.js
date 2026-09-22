@@ -839,8 +839,7 @@ function search(req) {
         return contentTokens.includes(term);
       });
 
-      // Simplified relevance: share of the content's tokens matched by the query,
-      // so an exact title scores 1 and a padded title scores lower.
+      // Simplified relevance: share of content tokens matched, so an exact title scores 1.
       potentialHit.relevanceScore = matchedTerms.length / (contentTokens.filter(Boolean).length || 1);
 
       return prefix ? matchedTerms.length === queryTerms.length : matchedTerms.length > 0;
@@ -871,8 +870,7 @@ function search(req) {
     size = req.body.from + req.body.size;
   }
 
-  // subType and relevanceScore are only exposed in grouped mode, so existing flat-mode
-  // consumers keep the hit shape they had before grouping was added.
+  // Deliberately omitted in flat mode to keep the hit shape existing consumers rely on.
   const hits = matchingContent.slice(from, size).map((hit) => {
     const flatHit = { ...hit };
     delete flatHit.subType;
@@ -882,13 +880,8 @@ function search(req) {
   return [ 200, { hits, total: matchingContent.length } ];
 }
 
-// Mirrors grouped mode in the real tool-api's search (lib/search/index.js): one group per
-// type keyed by type name, hits ordered by relevance, at most `size` hits per group (default 5),
-// then trimmed to hits scoring at least `minScoreRatio` of the group's top hit. For types in
-// `splitBySubType`, size and trimming apply per subType and hits without subType are dropped.
-// At most 100 unique types can be grouped.
-// Types without hits are omitted. Only the real API's code-level validations are mirrored,
-// not its swagger schema checks.
+// Mirrors grouped mode in the real tool-api's search (lib/search/index.js). Only its
+// code-level validations are mirrored, not the swagger schema checks.
 function groupedSearch(searchQuery, hits) {
   if (!searchQuery.types?.length || new Set(searchQuery.types).size > 100) return [ 400 ];
   if ([ "sort", "from", "size", "trackHits" ].some((field) => searchQuery[field] !== undefined)) return [ 400 ];
