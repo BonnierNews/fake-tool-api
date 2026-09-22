@@ -805,7 +805,9 @@ function search(req) {
       const hit = {
         type: typeName,
         id,
+        subType: content.attributes?.type,
         title: content.attributes?.name,
+        relevanceScore: 1,
         channels: searchChannels(types[typeName], content),
       };
 
@@ -819,7 +821,8 @@ function search(req) {
 
   if (req.body.q) {
     const fields = [ "title", "text" ];
-    const queryTerms = req.body.q.trim().toLowerCase().split(/\s+/);
+    const queryTerms = [ ...new Set(req.body.q.trim().toLowerCase().split(/\s+/)) ];
+    const prefix = req.body.behavior === "prefix";
 
     matchingContent = matchingContent.filter((potentialHit) => {
       const contentTokens = fields.flatMap((field) => {
@@ -828,17 +831,23 @@ function search(req) {
           .toLowerCase()
           .split(/\s+/);
       });
-      if (req.body.behavior === "prefix") {
-        return queryTerms.every((term) => {
+      const matchedTerms = queryTerms.filter((term) => {
+        if (prefix) {
           const cleanTerm = term.replace(/\*+$/, "").replaceAll("\"", "");
           return contentTokens.some((contentToken) => contentToken.startsWith(cleanTerm));
-        });
-      } else {
-        return queryTerms.some((term) =>
-          contentTokens.includes(term)
-        );
-      }
+        }
+        return contentTokens.includes(term);
+      });
+
+      // Simplified relevance: share of content tokens matched, so an exact title scores 1.
+      potentialHit.relevanceScore = matchedTerms.length / (contentTokens.filter(Boolean).length || 1);
+
+      return prefix ? matchedTerms.length === queryTerms.length : matchedTerms.length > 0;
     });
+  }
+
+  if (req.body.groupByType) {
+    return groupedSearch(req.body, matchingContent);
   }
 
   if (req.body.sort && Array.isArray(req.body.sort) && req.body.sort.length > 0) {
@@ -861,7 +870,53 @@ function search(req) {
     size = req.body.from + req.body.size;
   }
 
-  return [ 200, { hits: matchingContent.slice(from, size), total: matchingContent.length } ];
+  // Deliberately omitted in flat mode to keep the hit shape existing consumers rely on.
+  const hits = matchingContent.slice(from, size).map((hit) => {
+    const flatHit = { ...hit };
+    delete flatHit.subType;
+    delete flatHit.relevanceScore;
+    return flatHit;
+  });
+  return [ 200, { hits, total: matchingContent.length } ];
+}
+
+// Mirrors grouped mode in the real tool-api's search (lib/search/index.js). Only its
+// code-level validations are mirrored, not the swagger schema checks.
+function groupedSearch(searchQuery, hits) {
+  if (!searchQuery.types?.length || new Set(searchQuery.types).size > 100) return [ 400 ];
+  if ([ "sort", "from", "size", "trackHits" ].some((field) => searchQuery[field] !== undefined)) return [ 400 ];
+
+  const splitTypes = searchQuery.groupByType.splitBySubType ?? [];
+  if (splitTypes.some((type) => !searchQuery.types.includes(type))) return [ 400 ];
+
+  const groupSize = searchQuery.groupByType.size ?? 5;
+  const ratio = searchQuery.groupByType.minScoreRatio;
+  const byScore = (a, b) => b.relevanceScore - a.relevanceScore;
+
+  function trim(bucketHits) {
+    const sorted = bucketHits.sort(byScore).slice(0, groupSize);
+    if (!sorted.length || !ratio) return sorted;
+    const topScore = sorted[0].relevanceScore;
+    return sorted.filter((hit) => hit.relevanceScore >= ratio * topScore);
+  }
+
+  function bucketBy(items, key) {
+    const buckets = {};
+    for (const item of items) {
+      buckets[item[key]] ??= [];
+      buckets[item[key]].push(item);
+    }
+    return buckets;
+  }
+
+  const groups = {};
+  for (const [ type, typeHits ] of Object.entries(bucketBy(hits, "type"))) {
+    const groupHits = splitTypes.includes(type)
+      ? Object.values(bucketBy(typeHits.filter((hit) => hit.subType !== undefined && hit.subType !== null), "subType")).flatMap(trim).sort(byScore)
+      : trim(typeHits);
+    if (groupHits.length) groups[type] = { hits: groupHits };
+  }
+  return [ 200, { groups } ];
 }
 
 // Mirrors the real tool-api's search filters (lib/search/filters.js): channel and
