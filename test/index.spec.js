@@ -610,6 +610,137 @@ describe("Fake tool api", () => {
         expect(ids).to.include(unknownStatusId);
       });
     });
+
+    describe("grouped search (groupByType)", () => {
+      beforeEach(() => {
+        fakeToolApi.addType({ name: "tag" }, true);
+        fakeToolApi.addType({ name: "other" }, true);
+      });
+
+      it("should group hits by type and omit hits, total and empty groups", async () => {
+        const article1Id = randomUUID();
+        fakeToolApi.addContent("article", article1Id, { attributes: { name: "banana" }, active: true });
+        const article2Id = randomUUID();
+        fakeToolApi.addContent("article", article2Id, { attributes: { name: "banana split" }, active: true });
+        const inactiveArticleId = randomUUID();
+        fakeToolApi.addContent("article", inactiveArticleId, { attributes: { name: "banana" }, active: false });
+        const tagId = randomUUID();
+        fakeToolApi.addContent("tag", tagId, { attributes: { name: "banana tag" }, active: true });
+        fakeToolApi.addContent("other", randomUUID(), { attributes: { name: "orange" }, active: true });
+
+        const response = await postJson(`${baseUrl}/search`, { q: "banana", types: [ "article", "tag", "other" ], groupByType: {} });
+        expect(response.status).to.eql(200);
+        const responseBody = await response.json();
+
+        expect(responseBody).to.not.have.property("hits");
+        expect(responseBody).to.not.have.property("total");
+        expect(responseBody).to.have.property("groups");
+        expect(responseBody.groups).to.not.have.property("other");
+
+        expect(responseBody.groups.article.hits.map((hit) => hit.id)).to.have.members([ article1Id, article2Id ]);
+        expect(responseBody.groups.article.hits[0].relevanceScore).to.be.at.least(responseBody.groups.article.hits[1].relevanceScore);
+
+        expect(responseBody.groups.tag.hits).to.have.length(1);
+        const tagHit = responseBody.groups.tag.hits[0];
+        expect(tagHit).to.have.property("id", tagId);
+        expect(tagHit).to.have.property("type", "tag");
+        expect(tagHit).to.have.property("title", "banana tag");
+        expect(tagHit).to.have.property("relevanceScore").that.is.a("number");
+        expect(tagHit).to.not.have.property("content");
+      });
+
+      it("should cap hits per group with groupByType.size, defaulting to 5", async () => {
+        for (let i = 0; i < 6; i++) {
+          fakeToolApi.addContent("article", randomUUID(), { attributes: { name: `banana ${i}` }, active: true });
+        }
+
+        const capped = await postJson(`${baseUrl}/search`, { q: "banana", types: [ "article" ], groupByType: { size: 2 } });
+        expect((await capped.json()).groups.article.hits).to.have.length(2);
+
+        const defaulted = await postJson(`${baseUrl}/search`, { q: "banana", types: [ "article" ], groupByType: {} });
+        expect((await defaulted.json()).groups.article.hits).to.have.length(5);
+      });
+
+      it("should include content in grouped hits when returnContent: true", async () => {
+        const articleId = randomUUID();
+        fakeToolApi.addContent("article", articleId, { attributes: { name: "banana" }, active: true });
+
+        const response = await postJson(`${baseUrl}/search`, { q: "banana", types: [ "article" ], groupByType: {}, returnContent: true });
+        const responseBody = await response.json();
+
+        expect(responseBody.groups.article.hits[0]).to.have.nested.property("content.attributes.name", "banana");
+      });
+
+      it("should trim weak hits per group with groupByType.minScoreRatio", async () => {
+        const strongId = randomUUID();
+        fakeToolApi.addContent("article", strongId, { attributes: { name: "banana" }, active: true });
+        const weakId = randomUUID();
+        fakeToolApi.addContent("article", weakId, { attributes: { name: "banana split sundae" }, active: true });
+
+        const trimmed = await postJson(`${baseUrl}/search`, { q: "banana", types: [ "article" ], groupByType: { minScoreRatio: 0.5 } });
+        expect((await trimmed.json()).groups.article.hits.map((hit) => hit.id)).to.eql([ strongId ]);
+
+        const lenient = await postJson(`${baseUrl}/search`, { q: "banana", types: [ "article" ], groupByType: { minScoreRatio: 0.01 } });
+        expect((await lenient.json()).groups.article.hits.map((hit) => hit.id)).to.have.members([ strongId, weakId ]);
+      });
+
+      it("should apply size per subType for types in groupByType.splitBySubType", async () => {
+        const personId = randomUUID();
+        fakeToolApi.addContent("tag", personId, { attributes: { name: "banana", type: "person" }, active: true });
+        fakeToolApi.addContent("tag", randomUUID(), { attributes: { name: "banana person two", type: "person" }, active: true });
+        const organizationId = randomUUID();
+        fakeToolApi.addContent("tag", organizationId, { attributes: { name: "banana org", type: "organization" }, active: true });
+        fakeToolApi.addContent("tag", randomUUID(), { attributes: { name: "banana org two", type: "organization" }, active: true });
+        fakeToolApi.addContent("tag", randomUUID(), { attributes: { name: "banana untyped" }, active: true });
+        fakeToolApi.addContent("article", randomUUID(), { attributes: { name: "banana" }, active: true });
+        fakeToolApi.addContent("article", randomUUID(), { attributes: { name: "banana two" }, active: true });
+
+        const response = await postJson(`${baseUrl}/search`, {
+          q: "banana",
+          types: [ "article", "tag" ],
+          groupByType: { size: 1, splitBySubType: [ "tag" ] },
+        });
+        expect(response.status).to.eql(200);
+        const responseBody = await response.json();
+
+        const tagHits = responseBody.groups.tag.hits;
+        expect(tagHits.map((hit) => hit.id)).to.eql([ personId, organizationId ]);
+        expect(tagHits.map((hit) => hit.subType)).to.eql([ "person", "organization" ]);
+        expect(responseBody.groups.article.hits).to.have.length(1);
+      });
+
+      it("should reject invalid grouped requests", async () => {
+        fakeToolApi.addContent("article", randomUUID(), { attributes: { name: "banana" }, active: true });
+        const invalidBodies = [
+          { q: "banana", groupByType: {} },
+          { q: "banana", types: [], groupByType: {} },
+          { q: "banana", types: [ "article" ], groupByType: {}, sort: [ { by: "title", order: "asc" } ] },
+          { q: "banana", types: [ "article" ], groupByType: {}, from: 1 },
+          { q: "banana", types: [ "article" ], groupByType: {}, size: 1 },
+          { q: "banana", types: [ "article" ], groupByType: {}, trackHits: true },
+          { q: "banana", types: [ "article" ], groupByType: { splitBySubType: [ "tag" ] } },
+        ];
+
+        for (const body of invalidBodies) {
+          const response = await postJson(`${baseUrl}/search`, body);
+          expect(response.status, JSON.stringify(body)).to.eql(400);
+        }
+      });
+
+      it("should leave flat search unchanged", async () => {
+        const articleId = randomUUID();
+        fakeToolApi.addContent("article", articleId, { attributes: { name: "banana", type: "news" }, active: true });
+
+        const response = await postJson(`${baseUrl}/search`, { q: "banana" });
+        const responseBody = await response.json();
+
+        expect(responseBody).to.not.have.property("groups");
+        expect(responseBody).to.have.property("total", 1);
+        expect(responseBody.hits[0]).to.have.property("id", articleId);
+        expect(responseBody.hits[0]).to.not.have.property("subType");
+        expect(responseBody.hits[0]).to.not.have.property("relevanceScore");
+      });
+    });
   });
 
   describe("GET /:type/autocomplete", () => {
