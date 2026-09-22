@@ -709,6 +709,27 @@ describe("Fake tool api", () => {
         expect(responseBody.groups.article.hits).to.have.length(1);
       });
 
+      it("should exclude hits with null subType from split groups", async () => {
+        const personId = randomUUID();
+        fakeToolApi.addContent("tag", personId, { attributes: { name: "banana", type: "person" }, active: true });
+        fakeToolApi.addContent("tag", randomUUID(), { attributes: { name: "banana", type: null }, active: true });
+
+        const response = await postJson(`${baseUrl}/search`, { q: "banana", types: [ "tag" ], groupByType: { splitBySubType: [ "tag" ] } });
+        const responseBody = await response.json();
+
+        expect(responseBody.groups.tag.hits.map((hit) => hit.id)).to.eql([ personId ]);
+      });
+
+      it("should not let repeated query terms inflate relevanceScore", async () => {
+        const articleId = randomUUID();
+        fakeToolApi.addContent("article", articleId, { attributes: { name: "banana" }, active: true });
+
+        const response = await postJson(`${baseUrl}/search`, { q: "banana banana", types: [ "article" ], groupByType: {} });
+        const responseBody = await response.json();
+
+        expect(responseBody.groups.article.hits[0]).to.have.property("relevanceScore", 1);
+      });
+
       it("should reject invalid grouped requests", async () => {
         fakeToolApi.addContent("article", randomUUID(), { attributes: { name: "banana" }, active: true });
         const invalidBodies = [
@@ -719,6 +740,7 @@ describe("Fake tool api", () => {
           { q: "banana", types: [ "article" ], groupByType: {}, size: 1 },
           { q: "banana", types: [ "article" ], groupByType: {}, trackHits: true },
           { q: "banana", types: [ "article" ], groupByType: { splitBySubType: [ "tag" ] } },
+          { q: "banana", types: Array.from({ length: 101 }, (_, i) => `type-${i}`), groupByType: {} },
         ];
 
         for (const body of invalidBodies) {
