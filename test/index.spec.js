@@ -765,6 +765,36 @@ describe("Fake tool api", () => {
     });
   });
 
+  describe("GET /:type/all", () => {
+    it("should only return the attributes specified in the fields parameter", async () => {
+      const type = "section";
+      fakeToolApi.addType({
+        name: "section",
+        hierarchical: true,
+        publishingGroupSpecific: true,
+        properties: {
+          attributes: { type: "object", properties: { name: { type: "string", title: "Name" } } },
+          migrationSource: { type: "string" },
+        },
+      });
+      const sectionId = randomUUID();
+      const parentId = randomUUID();
+      await fakeToolApi.addContent(type, sectionId, {
+        active: true,
+        attributes: { name: "Alkoholfri dryck", parent: parentId, description: "some text" },
+        migrationSource: "apply-sections",
+        publishingGroup: randomUUID(),
+      });
+
+      const response = await fetch(`${baseUrl}/${type}/all?fields=name%2Cparent`);
+      expect(response.status).to.eql(200);
+      const responseBody = await response.json();
+      expect(responseBody.items.map((item) => item.id)).to.eql([ sectionId ]);
+      expect(responseBody.items[0].content.attributes).to.eql({ name: "Alkoholfri dryck", parent: parentId });
+      expect(fakeToolApi.peekContent(type, sectionId).attributes).to.have.property("description", "some text");
+    });
+  });
+
   describe("GET /:type/autocomplete", () => {
     it("should require a search query", async () => {
       const response = await fetch(`${baseUrl}/article/autocomplete`);
