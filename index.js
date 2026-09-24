@@ -525,6 +525,16 @@ function list(req) {
     items = items.filter((item) => filterTypes.includes(item.type));
   }
 
+  const fields = req.searchParams.getAll("fields").flatMap((f) => f.split(",")).map((f) => f.trim()).filter(Boolean);
+  if (fields.length > 0) {
+    items = items.map((item) => {
+      const attributes = Object.fromEntries(
+        Object.entries(item.content.attributes).filter(([ key ]) => fields.includes(key))
+      );
+      return { ...item, content: { ...item.content, attributes } };
+    });
+  }
+
   const orgLength = items.length;
   let responseItems = items;
 
