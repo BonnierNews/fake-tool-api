@@ -117,6 +117,7 @@ export function addWorkingCopy(type, id, content) {
 }
 
 export async function addContent(type, id, content, skipEvents) {
+  const existing = contentByType[type]?.[id];
   if (!contentByType[type]) {
     contentByType[type] = {};
   }
@@ -124,8 +125,12 @@ export async function addContent(type, id, content, skipEvents) {
   if (types[type]?.versioned) {
     storeVersion(type, id, { ...contentByType[type][id], updated: new Date().toISOString() });
   }
-  addReferencingContent(type, id, [ { id: "123", type: "article" }, { id: "456", type: "article" } ]);
-  if (!skipEvents) await sendEvent(type, id, "published");
+  let visibleOnContent = [];
+  if (type === "article") {
+    addReferencingContent(type, id, findReferencingArticles(id));
+    visibleOnContent = computeVisibleOnContent(type, id, content, existing);
+  }
+  if (!skipEvents) await sendEvent(type, id, "published", visibleOnContent);
 }
 
 export async function removeContent(type, id) {
@@ -183,7 +188,7 @@ export function peekSlugs() {
   return slugs;
 }
 
-async function sendEvent(type, id, event) {
+async function sendEvent(type, id, event, visibleOnContent = []) {
   if (!pubSubListener) return;
   const message = {
     id,
@@ -192,6 +197,7 @@ async function sendEvent(type, id, event) {
       type,
       id,
       updated: new Date(),
+      visibleOnContent,
     })),
     attributes: { traceId: randomBytes(16).toString("hex") },
   };
@@ -384,6 +390,45 @@ function addReferencingContent(type, id, referencingItems) {
     referencedBy[type] = {};
   }
   referencedBy[type][id] = referencingItems;
+}
+
+// Finds already-added articles that reference the given article id through a
+// content block link with an href of "article://<id>" (attributes.content[].link.href),
+// mirroring searchContentLinkingToArticleInContent in the real tool-api's
+// lib/database/mongo.js.
+function findReferencingArticles(id) {
+  const articles = contentByType.article || {};
+  const target = `article://${id}`;
+
+  return Object.keys(articles)
+    .filter((articleId) => articleId !== id)
+    .filter((articleId) => {
+      const content = articles[articleId].attributes?.content;
+      return Array.isArray(content) && content.some((block) => block.link?.href === target);
+    })
+    .map((articleId) => ({ id: articleId, type: "article" }));
+}
+
+// Mirrors the visibleOnContent computation in the real tool-api's saveContent
+// (lib/routes/content.js): a published article that is of a TV article-type and is
+// embedded into other, already-published articles reports those host articles as
+// visibleOnContent, along with whether it is/was live.
+function computeVisibleOnContent(type, id, content, existing) {
+  if (type !== "article") return [];
+
+  const articleTypeIds = content.attributes?.articleTypes || [];
+  const articleTypes = contentByType["article-type"] || {};
+  const isTV = articleTypeIds.some((articleTypeId) => articleTypes[articleTypeId]?.attributes?.isTV === true);
+  if (!isTV) return [];
+
+  const visibleOnContent = findReferencingArticles(id);
+  if (!visibleOnContent.length) return [];
+
+  const isLive = articleTypeIds.some((articleTypeId) => articleTypes[articleTypeId]?.attributes?.isLive === true);
+  const oldArticleTypeIds = existing?.attributes?.articleTypes || [];
+  const wasLive = oldArticleTypeIds.some((articleTypeId) => articleTypes[articleTypeId]?.attributes?.isLive === true);
+
+  return visibleOnContent.map((ref) => ({ ...ref, attributes: { isTV, isLive, wasLive } }));
 }
 
 /**
@@ -768,6 +813,7 @@ function putContent(req) {
       return [ 409 ];
     }
   }
+  const existing = ofType[id];
   const storedObject = structuredClone(req.body);
   const now = new Date().toISOString();
   storedObject.updated = new Date().toISOString();
@@ -778,7 +824,8 @@ function putContent(req) {
   if (types[type].versioned) {
     storeVersion(type, id, ofType[id]);
   }
-  sendEvent(type, id, "published");
+  const visibleOnContent = computeVisibleOnContent(type, id, storedObject, existing);
+  sendEvent(type, id, "published", visibleOnContent);
   return [ 200, storedObject, { "sequence-number": parsedSequenceNumber + 1 } ];
 }
 

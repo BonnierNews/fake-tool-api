@@ -240,11 +240,101 @@ describe("Fake tool api", () => {
   });
 
   describe("GET /referenced-by", () => {
-    it("should return a shallow list of referensing content", async () => {
+    it("should return already-added articles that link to this article via a content-block", async () => {
+      const referencingId = randomUUID();
+      const otherId = randomUUID();
+      await fakeToolApi.addContent("article", referencingId, { attributes: { name: "referencing", content: [ { link: { href: `article://${id}` } } ] } });
+      await fakeToolApi.addContent("article", otherId, { attributes: { name: "unrelated" } });
+
+      await fakeToolApi.addContent("article", id, { headline: "Hej" });
+
+      const res = await fetch(`${baseUrl}/article/${id}/referenced-by`, {});
+      const references = await res.json();
+      expect(references).to.eql([ { id: referencingId, type: "article" } ]);
+    });
+
+    it("should return an empty list when no already-added article links to this article", async () => {
       fakeToolApi.addContent("article", id, { headline: "Hej" });
       const res = await fetch(`${baseUrl}/article/${id}/referenced-by`, {});
       const references = await res.json();
-      expect(references.length).to.eql(2);
+      expect(references).to.eql([]);
+    });
+  });
+
+  describe("visibleOnContent events", () => {
+    it("should include host articles embedding a published TV article in visibleOnContent", async () => {
+      const articleTypeId = randomUUID();
+      const videoArticleId = randomUUID();
+      const hostArticleId1 = randomUUID();
+      const hostArticleId2 = randomUUID();
+
+      fakeToolApi.addType({ name: "article-type" });
+      await fakeToolApi.addContent("article-type", articleTypeId, { attributes: { isTV: true } });
+
+      await fakeToolApi.addContent("article", hostArticleId1, { attributes: { name: "host 1", content: [ { link: { href: `article://${videoArticleId}` } } ] } });
+      await fakeToolApi.addContent("article", hostArticleId2, { attributes: { name: "host 2", content: [ { link: { href: `article://${videoArticleId}` } } ] } });
+      events.length = 0;
+
+      await fakeToolApi.addContent("article", videoArticleId, { attributes: { name: "video", articleTypes: [ articleTypeId ] } });
+
+      expect(events).to.have.length(1);
+      expect(events[0].visibleOnContent).to.have.deep.members([
+        { id: hostArticleId1, type: "article", attributes: { isTV: true, isLive: false, wasLive: false } },
+        { id: hostArticleId2, type: "article", attributes: { isTV: true, isLive: false, wasLive: false } },
+      ]);
+    });
+
+    it("should report isLive based on the article's current article-types", async () => {
+      const articleTypeId = randomUUID();
+      const videoArticleId = randomUUID();
+      const hostArticleId = randomUUID();
+
+      fakeToolApi.addType({ name: "article-type" });
+      await fakeToolApi.addContent("article-type", articleTypeId, { attributes: { isTV: true, isLive: true } });
+      await fakeToolApi.addContent("article", hostArticleId, { attributes: { name: "host", content: [ { link: { href: `article://${videoArticleId}` } } ] } });
+      events.length = 0;
+
+      await fakeToolApi.addContent("article", videoArticleId, { attributes: { name: "video", articleTypes: [ articleTypeId ] } });
+
+      expect(events[0].visibleOnContent).to.deep.include({ id: hostArticleId, type: "article", attributes: { isTV: true, isLive: true, wasLive: false } });
+    });
+
+    it("should report wasLive based on the article's article-types before this update", async () => {
+      const liveArticleTypeId = randomUUID();
+      const nonLiveArticleTypeId = randomUUID();
+      const videoArticleId = randomUUID();
+      const hostArticleId = randomUUID();
+
+      fakeToolApi.addType({ name: "article-type" });
+      await fakeToolApi.addContent("article-type", liveArticleTypeId, { attributes: { isTV: true, isLive: true } });
+      await fakeToolApi.addContent("article-type", nonLiveArticleTypeId, { attributes: { isTV: true, isLive: false } });
+      await fakeToolApi.addContent("article", hostArticleId, { attributes: { name: "host", content: [ { link: { href: `article://${videoArticleId}` } } ] } });
+      await fakeToolApi.addContent("article", videoArticleId, { attributes: { name: "video", articleTypes: [ liveArticleTypeId ] } });
+      events.length = 0;
+
+      await fakeToolApi.addContent("article", videoArticleId, { attributes: { name: "video", articleTypes: [ nonLiveArticleTypeId ] } });
+
+      expect(events[0].visibleOnContent).to.deep.include({ id: hostArticleId, type: "article", attributes: { isTV: true, isLive: false, wasLive: true } });
+    });
+
+    it("should not include visibleOnContent for embedded articles that are not of a TV article-type", async () => {
+      const articleTypeId = randomUUID();
+      const videoArticleId = randomUUID();
+      const hostArticleId = randomUUID();
+
+      fakeToolApi.addType({ name: "article-type" });
+      await fakeToolApi.addContent("article-type", articleTypeId, { attributes: { isTV: false } });
+      await fakeToolApi.addContent("article", hostArticleId, { attributes: { name: "host", content: [ { link: { href: `article://${videoArticleId}` } } ] } });
+      events.length = 0;
+
+      await fakeToolApi.addContent("article", videoArticleId, { attributes: { name: "video", articleTypes: [ articleTypeId ] } });
+
+      expect(events[0].visibleOnContent).to.eql([]);
+    });
+
+    it("should default visibleOnContent to an empty list for non-article content", async () => {
+      await fakeToolApi.addContent("channel", randomUUID(), { attributes: { name: "A channel" } });
+      expect(events[0].visibleOnContent).to.eql([]);
     });
   });
 
