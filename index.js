@@ -864,6 +864,7 @@ function search(req) {
         id,
         subType: content.attributes?.type,
         title: content.attributes?.name,
+        text: extractSearchText(types[typeName], content),
         relevanceScore: 1,
         channels: searchChannels(types[typeName], content),
       };
@@ -1023,6 +1024,32 @@ function searchChannels(typeDefinition, content) {
     return content.attributes.channels;
   }
   return undefined;
+}
+
+// Mirrors the searchText half of extractSearchTextAndDescription in the real tool-api's
+// lib/search-index.js, walking properties like its traverseProperties: every string or
+// rich-text content-blocks property marked searchText contributes to the hit's text.
+function extractSearchText(typeDefinition, content) {
+  const texts = [];
+
+  const visit = (property, value) => {
+    if (!value) return;
+
+    if (property.type === "object") {
+      Object.entries(property.properties || {}).forEach(([ propertyName, child ]) => visit(child, value[propertyName]));
+    } else if (property.type === "array") {
+      value.forEach((item) => visit(property.items, item));
+    } else if (property.type === "dictionary") {
+      Object.values(value).forEach((item) => visit(property.values, item));
+    } else if (property.searchText && property.type === "string") {
+      texts.push(value);
+    } else if (property.searchText && property.type === "content-blocks") {
+      texts.push(...value.filter((block) => block.type === "rich-text").map((block) => block.text));
+    }
+  };
+
+  visit({ type: "object", properties: typeDefinition?.properties }, content);
+  return texts.join(" ");
 }
 
 function getTypes() {

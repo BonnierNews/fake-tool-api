@@ -436,6 +436,88 @@ describe("Fake tool api", () => {
       expect(responseBody.hits[0].id).to.eql(matchingId);
     });
 
+    describe("properties marked as searchText", () => {
+      const eventType = {
+        name: "event",
+        properties: {
+          attributes: { type: "object", properties: { name: { type: "string" } } },
+          description: { type: "string", searchText: true },
+          internalNote: { type: "string" },
+          details: { type: "object", properties: { summary: { type: "string", searchText: true } } },
+          body: { type: "content-blocks", searchText: true },
+          altNames: { type: "array", items: { type: "string", searchText: true } },
+          steps: { type: "array", items: { type: "object", properties: { text: { type: "string", searchText: true } } } },
+          translations: { type: "dictionary", keys: { type: "string" }, values: { type: "string", searchText: true } },
+        },
+      };
+
+      const searchIds = async (q, extra = {}) => {
+        const response = await postJson(`${baseUrl}/search`, { q, types: [ "event" ], ...extra });
+        return (await response.json()).hits.map((hit) => hit.id);
+      };
+
+      beforeEach(() => {
+        fakeToolApi.addType(eventType, true);
+      });
+
+      it("should find content on a word that only exists in a searchText string property", async () => {
+        const matchingId = randomUUID();
+        fakeToolApi.addContent("event", matchingId, { attributes: { name: "Stadsfesten" }, description: "Fyrverkeri vid hamnen", active: true });
+        fakeToolApi.addContent("event", randomUUID(), { attributes: { name: "Loppis" }, description: "Allt ska bort", active: true });
+
+        expect(await searchIds("hamnen")).to.eql([ matchingId ]);
+      });
+
+      it("should find content with prefix behavior on a word that only exists in a searchText string property", async () => {
+        const matchingId = randomUUID();
+        fakeToolApi.addContent("event", matchingId, { attributes: { name: "Stadsfesten" }, description: "Fyrverkeri vid hamnen", active: true });
+
+        expect(await searchIds("hamn*", { behavior: "prefix" })).to.eql([ matchingId ]);
+      });
+
+      it("should not find content on a word that only exists in a property without searchText", async () => {
+        fakeToolApi.addContent("event", randomUUID(), { attributes: { name: "Stadsfesten" }, description: "Fyrverkeri", internalNote: "hamnen", active: true });
+
+        expect(await searchIds("hamnen")).to.eql([]);
+      });
+
+      it("should find content on a searchText property nested in an object", async () => {
+        const nestedId = randomUUID();
+        fakeToolApi.addContent("event", nestedId, { attributes: { name: "A" }, details: { summary: "insidan" }, active: true });
+
+        expect(await searchIds("insidan")).to.eql([ nestedId ]);
+      });
+
+      it("should find content in rich-text blocks of a searchText content-blocks property", async () => {
+        const blocksId = randomUUID();
+        fakeToolApi.addContent("event", blocksId, { attributes: { name: "B" }, body: [ { type: "rich-text", text: "hattrick" }, { type: "image", text: "osynlig" } ], active: true });
+
+        expect(await searchIds("hattrick")).to.eql([ blocksId ]);
+        expect(await searchIds("osynlig")).to.eql([]);
+      });
+
+      it("should find content on searchText items in an array", async () => {
+        const arrayId = randomUUID();
+        fakeToolApi.addContent("event", arrayId, { attributes: { name: "C" }, altNames: [ "Festivalen", "Kalaset" ], active: true });
+
+        expect(await searchIds("kalaset")).to.eql([ arrayId ]);
+      });
+
+      it("should find content on searchText properties of objects in an array", async () => {
+        const arrayOfObjectsId = randomUUID();
+        fakeToolApi.addContent("event", arrayOfObjectsId, { attributes: { name: "D" }, steps: [ { text: "Vispa" }, { text: "Grädda" } ], active: true });
+
+        expect(await searchIds("grädda")).to.eql([ arrayOfObjectsId ]);
+      });
+
+      it("should find content on searchText values in a dictionary", async () => {
+        const dictionaryId = randomUUID();
+        fakeToolApi.addContent("event", dictionaryId, { attributes: { name: "E" }, translations: { en: "Fireworks", de: "Feuerwerk" }, active: true });
+
+        expect(await searchIds("feuerwerk")).to.eql([ dictionaryId ]);
+      });
+    });
+
     it("should include content when returnContent: true", async () => {
       const content1Id = randomUUID();
       fakeToolApi.addContent("article", content1Id, { attributes: { name: "banana" }, active: true });
