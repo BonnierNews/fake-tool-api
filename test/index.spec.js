@@ -488,6 +488,24 @@ describe("Fake tool api", () => {
         expect(hits.map((hit) => hit.id)).to.have.members([ withDescriptionId, withoutDescriptionId ]);
       });
 
+      it("should rank a title match above a searchText-only match regardless of insertion order", async () => {
+        const descriptionOnlyId = randomUUID();
+        fakeToolApi.addContent("event", descriptionOnlyId, { attributes: { name: "Loppis" }, description: "Stadsfesten", active: true });
+        const titleId = randomUUID();
+        fakeToolApi.addContent("event", titleId, { attributes: { name: "Stadsfesten" }, description: "Fyrverkeri", active: true });
+
+        const response = await postJson(`${baseUrl}/search`, { q: "stadsfesten", types: [ "event" ], groupByType: {} });
+        const { hits } = (await response.json()).groups.event;
+        expect(hits.map((hit) => hit.id)).to.eql([ titleId, descriptionOnlyId ]);
+      });
+
+      it("should ignore null blocks in a searchText content-blocks property", async () => {
+        const blocksId = randomUUID();
+        fakeToolApi.addContent("event", blocksId, { attributes: { name: "B" }, body: [ null, { type: "rich-text", text: "hattrick" } ], active: true });
+
+        expect(await searchIds("hattrick")).to.eql([ blocksId ]);
+      });
+
       it("should not match searchText items of an array nested directly in another array, like the real traversal", async () => {
         fakeToolApi.addType({ name: "matrix", properties: { attributes: { type: "object", properties: { name: { type: "string" } } }, rows: { type: "array", items: { type: "array", items: { type: "string", searchText: true } } } } }, true);
         fakeToolApi.addContent("matrix", randomUUID(), { attributes: { name: "M" }, rows: [ [ "hamnen" ] ], active: true });

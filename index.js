@@ -878,30 +878,26 @@ function search(req) {
   });
 
   if (req.body.q) {
-    const fields = [ "title", "text" ];
-    const queryTerms = [ ...new Set(req.body.q.trim().toLowerCase().split(/\s+/)) ];
+    // Like the real search's title^2 boost: a match in the searchText text counts half as much.
+    const fieldWeights = { title: 1, text: 0.5 };
     const prefix = req.body.behavior === "prefix";
-
-    const matches = (term, tokens) => {
-      if (prefix) {
-        const cleanTerm = term.replace(/\*+$/, "").replaceAll("\"", "");
-        return tokens.some((token) => token.startsWith(cleanTerm));
-      }
-      return tokens.includes(term);
-    };
+    const queryTerms = [ ...new Set(req.body.q.trim().toLowerCase().split(/\s+/)) ]
+      .map((term) => (prefix ? term.replace(/\*+$/, "").replaceAll("\"", "") : term));
+    const matches = (term, tokens) => (prefix ? tokens.some((token) => token.startsWith(term)) : tokens.includes(term));
 
     matchingContent = matchingContent.filter((potentialHit) => {
-      const tokensByField = fields.map((field) => (potentialHit[field] || "").trim().toLowerCase().split(/\s+/).filter(Boolean));
-      const contentTokens = tokensByField.flat();
-      const matchedTerms = queryTerms.filter((term) => matches(term, contentTokens));
+      const matchedByField = Object.entries(fieldWeights).map(([ field, weight ]) => {
+        const tokens = (potentialHit[field] || "").trim().toLowerCase().split(/\s+/).filter(Boolean);
+        const matched = queryTerms.filter((term) => matches(term, tokens));
+        return { matched, score: weight * matched.length / (tokens.length || 1) };
+      });
+      const matchedTerms = new Set(matchedByField.flatMap(({ matched }) => matched));
 
-      // Simplified relevance: the best field's share of tokens matched, so an exact title
-      // scores 1 regardless of how much searchText text the content carries.
-      potentialHit.relevanceScore = Math.max(...tokensByField.map((tokens) => {
-        return queryTerms.filter((term) => matches(term, tokens)).length / (tokens.length || 1);
-      }));
+      // Simplified relevance: the best field's weighted share of tokens matched, so an exact
+      // title scores 1 regardless of how much searchText text the content carries.
+      potentialHit.relevanceScore = Math.max(...matchedByField.map(({ score }) => score));
 
-      return prefix ? matchedTerms.length === queryTerms.length : matchedTerms.length > 0;
+      return prefix ? matchedTerms.size === queryTerms.length : matchedTerms.size > 0;
     });
   }
 
@@ -1050,7 +1046,7 @@ function extractSearchText(typeDefinition, content) {
     if (property.type === "string") {
       texts.push(value);
     } else if (property.type === "content-blocks" && Array.isArray(value)) {
-      texts.push(...value.filter((block) => block.type === "rich-text").map((block) => block.text));
+      texts.push(...value.filter((block) => block?.type === "rich-text").map((block) => block.text));
     }
   };
 
