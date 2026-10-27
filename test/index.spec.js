@@ -468,6 +468,44 @@ describe("Fake tool api", () => {
         expect(await searchIds("hamnen")).to.eql([ matchingId ]);
       });
 
+      it("should return the searchText text on the hit", async () => {
+        const eventId = randomUUID();
+        fakeToolApi.addContent("event", eventId, { attributes: { name: "Stadsfesten" }, description: "Fyrverkeri vid hamnen", altNames: [ "Kalaset" ], active: true });
+
+        const response = await postJson(`${baseUrl}/search`, { types: [ "event" ] });
+        const [ hit ] = (await response.json()).hits;
+        expect(hit.text).to.equal("Fyrverkeri vid hamnen Kalaset");
+      });
+
+      it("should still score an exact title match as 1 when the content has searchText text", async () => {
+        const withDescriptionId = randomUUID();
+        fakeToolApi.addContent("event", withDescriptionId, { attributes: { name: "Stadsfesten" }, description: "Fyrverkeri vid hamnen hela kvällen", active: true });
+        const withoutDescriptionId = randomUUID();
+        fakeToolApi.addContent("event", withoutDescriptionId, { attributes: { name: "Stadsfesten" }, active: true });
+
+        const response = await postJson(`${baseUrl}/search`, { q: "stadsfesten", types: [ "event" ], groupByType: { minScoreRatio: 0.9 } });
+        const { hits } = (await response.json()).groups.event;
+        expect(hits.map((hit) => hit.id)).to.have.members([ withDescriptionId, withoutDescriptionId ]);
+      });
+
+      it("should not match searchText items of an array nested directly in another array, like the real traversal", async () => {
+        fakeToolApi.addType({ name: "matrix", properties: { attributes: { type: "object", properties: { name: { type: "string" } } }, rows: { type: "array", items: { type: "array", items: { type: "string", searchText: true } } } } }, true);
+        fakeToolApi.addContent("matrix", randomUUID(), { attributes: { name: "M" }, rows: [ [ "hamnen" ] ], active: true });
+
+        const response = await postJson(`${baseUrl}/search`, { q: "hamnen", types: [ "matrix" ] });
+        expect((await response.json()).hits).to.eql([]);
+      });
+
+      it("should tolerate array properties without items and values that are not arrays", async () => {
+        fakeToolApi.addType({ name: "loose", properties: { attributes: { type: "object", properties: { name: { type: "string" } } }, list: { type: "array" }, body: { type: "content-blocks", searchText: true } } }, true);
+        const looseId = randomUUID();
+        fakeToolApi.addContent("loose", looseId, { attributes: { name: "L" }, list: [ "a" ], body: "plain text", active: true });
+
+        const response = await postJson(`${baseUrl}/search`, { types: [ "loose" ] });
+        expect(response.status).to.equal(200);
+        expect((await response.json()).hits.map((hit) => hit.id)).to.eql([ looseId ]);
+      });
+
       it("should find content with prefix behavior on a word that only exists in a searchText string property", async () => {
         const matchingId = randomUUID();
         fakeToolApi.addContent("event", matchingId, { attributes: { name: "Stadsfesten" }, description: "Fyrverkeri vid hamnen", active: true });
