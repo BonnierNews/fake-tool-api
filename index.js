@@ -864,6 +864,7 @@ function search(req) {
         id,
         subType: content.attributes?.type,
         title: content.attributes?.name,
+        text: extractSearchText(types[typeName], content),
         relevanceScore: 1,
         channels: searchChannels(types[typeName], content),
       };
@@ -877,29 +878,26 @@ function search(req) {
   });
 
   if (req.body.q) {
-    const fields = [ "title", "text" ];
-    const queryTerms = [ ...new Set(req.body.q.trim().toLowerCase().split(/\s+/)) ];
+    // Like the real search's title^2 boost: a match in the searchText text counts half as much.
+    const fieldWeights = { title: 1, text: 0.5 };
     const prefix = req.body.behavior === "prefix";
+    const queryTerms = [ ...new Set(req.body.q.trim().toLowerCase().split(/\s+/)) ]
+      .map((term) => (prefix ? term.replace(/\*+$/, "").replaceAll("\"", "") : term));
+    const matches = (term, tokens) => (prefix ? tokens.some((token) => token.startsWith(term)) : tokens.includes(term));
 
     matchingContent = matchingContent.filter((potentialHit) => {
-      const contentTokens = fields.flatMap((field) => {
-        return (potentialHit[field] || "")
-          .trim()
-          .toLowerCase()
-          .split(/\s+/);
+      const matchedByField = Object.entries(fieldWeights).map(([ field, weight ]) => {
+        const tokens = (potentialHit[field] || "").trim().toLowerCase().split(/\s+/).filter(Boolean);
+        const matched = queryTerms.filter((term) => matches(term, tokens));
+        return { matched, score: weight * matched.length / (tokens.length || 1) };
       });
-      const matchedTerms = queryTerms.filter((term) => {
-        if (prefix) {
-          const cleanTerm = term.replace(/\*+$/, "").replaceAll("\"", "");
-          return contentTokens.some((contentToken) => contentToken.startsWith(cleanTerm));
-        }
-        return contentTokens.includes(term);
-      });
+      const matchedTerms = new Set(matchedByField.flatMap(({ matched }) => matched));
 
-      // Simplified relevance: share of content tokens matched, so an exact title scores 1.
-      potentialHit.relevanceScore = matchedTerms.length / (contentTokens.filter(Boolean).length || 1);
+      // Simplified relevance: the best field's weighted share of tokens matched, so an exact
+      // title scores 1 regardless of how much searchText text the content carries.
+      potentialHit.relevanceScore = Math.max(...matchedByField.map(({ score }) => score));
 
-      return prefix ? matchedTerms.length === queryTerms.length : matchedTerms.length > 0;
+      return prefix ? matchedTerms.size === queryTerms.length : matchedTerms.size > 0;
     });
   }
 
@@ -1023,6 +1021,37 @@ function searchChannels(typeDefinition, content) {
     return content.attributes.channels;
   }
   return undefined;
+}
+
+// Mirrors the searchText half of extractSearchTextAndDescription in the real tool-api's
+// lib/search-index.js, walking properties like its traverseProperties: every string or
+// rich-text content-blocks property marked searchText contributes to the hit's text.
+// Like the real traversal, array items and dictionary values are only descended into
+// when they are objects, so an array directly inside an array is not searched.
+function extractSearchText(typeDefinition, content) {
+  const texts = [];
+
+  const visit = (property, value, nestedInCollection = false) => {
+    if (!property || !value) return;
+
+    if (property.type === "object") {
+      Object.entries(property.properties || {}).forEach(([ propertyName, child ]) => visit(child, value[propertyName]));
+    } else if (property.type === "array" && Array.isArray(value) && !nestedInCollection) {
+      value.forEach((item) => visit(property.items, item, true));
+    } else if (property.type === "dictionary" && typeof value === "object" && !nestedInCollection) {
+      Object.values(value).forEach((item) => visit(property.values, item, true));
+    }
+
+    if (!property.searchText) return;
+    if (property.type === "string") {
+      texts.push(value);
+    } else if (property.type === "content-blocks" && Array.isArray(value)) {
+      texts.push(...value.filter((block) => block?.type === "rich-text").map((block) => block.text));
+    }
+  };
+
+  visit({ type: "object", properties: typeDefinition?.properties }, content);
+  return texts.join(" ");
 }
 
 function getTypes() {
