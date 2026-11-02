@@ -1,5 +1,6 @@
 import { randomUUID } from "crypto";
 import { expect } from "chai";
+import nock from "nock";
 import fetch from "node-fetch";
 
 import * as fakeToolApi from "../index.js";
@@ -1261,6 +1262,45 @@ describe("Fake tool api", () => {
         res = await fetch(data.url, { method: "PUT" });
         expect(res.ok).to.be.true;
       });
+
+      it(`should not report an unused upload url for ${kindOfFile} as pending`, async () => {
+        const res = await fetch(`${baseUrl}/${kindOfFile}/get-signed-upload-url?filename=foo.mp4`);
+        expect(res.ok).to.be.true;
+
+        expect(nock.pendingMocks()).to.eql([]);
+      });
+    });
+  });
+
+  describe("nock", () => {
+    it("should not report its routes as pending", async () => {
+      expect(nock.pendingMocks()).to.eql([]);
+      expect(nock.isDone()).to.be.true;
+
+      await fetch(`${baseUrl}/types`);
+
+      expect(nock.pendingMocks()).to.eql([]);
+      expect(nock.isDone()).to.be.true;
+    });
+
+    it("should answer again when initialized after nock.cleanAll()", async () => {
+      nock.cleanAll();
+      fakeToolApi.initNock(baseUrl);
+
+      const res = await fetch(`${baseUrl}/types`);
+      expect(res.status).to.equal(200);
+    });
+
+    it("should not register its routes twice when initialized again", () => {
+      const routeCount = nock.activeMocks().length;
+      expect(routeCount).to.be.above(0);
+
+      fakeToolApi.initNock(baseUrl);
+      expect(nock.activeMocks()).to.have.length(routeCount);
+
+      nock.cleanAll();
+      fakeToolApi.initNock(baseUrl);
+      expect(nock.activeMocks()).to.have.length(routeCount);
     });
   });
 });
