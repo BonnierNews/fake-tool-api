@@ -1,9 +1,12 @@
 import { randomUUID } from "crypto";
+import { createRequire } from "module";
 import { expect } from "chai";
 import nock from "nock";
 import fetch from "node-fetch";
 
 import * as fakeToolApi from "../index.js";
+
+const nockMajorVersion = Number(createRequire(import.meta.url)("nock/package.json").version.split(".")[0]);
 
 const baseUrl = "https://fake-tool-api-test";
 describe("Fake tool api", () => {
@@ -1301,6 +1304,24 @@ describe("Fake tool api", () => {
       nock.cleanAll();
       fakeToolApi.initNock(baseUrl);
       expect(nock.activeMocks()).to.have.length(routeCount);
+    });
+
+    // nock 13 only intercepts the http module, which native fetch doesn't use
+    const describeNock14 = nockMajorVersion >= 14 ? describe : describe.skip;
+    describeNock14("with native fetch", () => {
+      it("should support PUT:ing and GET:ing a working copy", async () => {
+        const url = `${baseUrl}/article/${randomUUID()}/working-copy`;
+        const putRes = await globalThis.fetch(url, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: "Hello" }),
+        });
+        expect(putRes.ok).to.be.true;
+
+        const getRes = await globalThis.fetch(url);
+        expect(getRes.status).to.equal(200);
+        expect((await getRes.json()).name).to.equal("Hello");
+      });
     });
   });
 });

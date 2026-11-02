@@ -12,6 +12,7 @@ jobs:
     strategy:
       matrix:
         node-version: [22.x, 24.x, 26.x]
+        nock-version: [13, 14]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -25,6 +26,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Use nock ${{ matrix.nock-version }}
+        run: npm install --no-save nock@${{ matrix.nock-version }}
 
       - name: Run tests
         run: npm test
