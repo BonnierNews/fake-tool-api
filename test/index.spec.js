@@ -1295,6 +1295,9 @@ describe("Fake tool api", () => {
     });
 
     it("should not register its routes twice when initialized again", () => {
+      // Start from the fake's routes only, without interceptors left by earlier tests
+      nock.cleanAll();
+      fakeToolApi.initNock(baseUrl);
       const routeCount = nock.activeMocks().length;
       expect(routeCount).to.be.above(0);
 
