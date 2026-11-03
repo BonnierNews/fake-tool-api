@@ -462,6 +462,18 @@ function deleteUserSetting(req) {
 }
 
 function list(req) {
+  const sizeParam = req.searchParams.get("size");
+  const size = sizeParam ? parseInt(sizeParam) : 500;
+  if (!(size >= 1 && size <= 1000)) {
+    return [ 400 ];
+  }
+
+  const cursorParam = req.searchParams.get("cursor");
+  const cursor = cursorParam ? parseCursor(cursorParam) : undefined;
+  if (cursorParam && !cursor) {
+    return [ 400 ];
+  }
+
   const type = req.params.type;
   const parent = req.searchParams.get("parent");
   let ofType;
@@ -570,37 +582,31 @@ function list(req) {
     items = items.filter((item) => filterTypes.includes(item.type));
   }
 
+  // Same order and cursor semantics as tool-api: updated descending, then id ascending
+  items.sort((a, b) => compareListingKeys(listingKey(a), listingKey(b)));
+  if (cursor) {
+    items = items.filter((item) => compareListingKeys(listingKey(item), cursor) > 0);
+  }
+  let responseItems = items.slice(0, size);
+
+  let nextCursor;
+  let nextUrl;
+  if (responseItems.length === size) {
+    const lastKey = listingKey(responseItems[responseItems.length - 1]);
+    nextCursor = `${lastKey.updatedMs}|${lastKey.id}`;
+    const nextUrlObj = new URL(req.url, baseUrl);
+    nextUrlObj.searchParams.set("cursor", nextCursor);
+    nextUrl = nextUrlObj.toString();
+  }
+
   const fields = req.searchParams.getAll("fields").flatMap((f) => f.split(",")).map((f) => f.trim()).filter(Boolean);
   if (fields.length > 0) {
-    items = items.map((item) => {
+    responseItems = responseItems.map((item) => {
       const attributes = Object.fromEntries(
         Object.entries(item.content.attributes).filter(([ key ]) => fields.includes(key))
       );
       return { ...item, content: { ...item.content, attributes } };
     });
-  }
-
-  const orgLength = items.length;
-  let responseItems = items;
-
-  const from = req.searchParams.get("cursor");
-  if (from) {
-    items = items.slice(parseInt(from));
-  }
-
-  const size = req.searchParams.get("size");
-  if (size) {
-    responseItems = items.slice(0, parseInt(size));
-  }
-
-  let nextCursor;
-  let nextUrl;
-  if (responseItems.length < items.length) {
-    nextCursor = orgLength - (items.length - responseItems.length);
-    const nextUrlObj = new URL(req.url, baseUrl);
-    nextUrlObj.searchParams.set("cursor", nextCursor);
-    nextUrl = nextUrlObj.toString();
-
   }
 
   responseItems = JSON.parse(JSON.stringify(responseItems));
@@ -611,6 +617,28 @@ function list(req) {
 
   const responseBody = { items: responseItems, nextCursor, next: nextUrl };
   return [ 200, responseBody ];
+}
+
+// The listing's sort key, in the same shape that parseCursor returns
+function listingKey(item) {
+  return { updatedMs: new Date(item.content.updated).getTime(), id: item.id };
+}
+
+// updated descending, then id ascending in code-unit order, as MongoDB sorts string _ids
+function compareListingKeys(a, b) {
+  if (a.updatedMs !== b.updatedMs) return b.updatedMs - a.updatedMs;
+  if (a.id === b.id) return 0;
+  return a.id < b.id ? -1 : 1;
+}
+
+// Mirrors tool-api's lib/parse-cursor.js, including its unanchored uuid check
+function parseCursor(cursor) {
+  const parts = cursor.split("|");
+  if (parts.length !== 2) return;
+  const ms = new Date(parseInt(parts[0])).getTime();
+  if (isNaN(ms)) return;
+  if (!/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/.test(parts[1])) return;
+  return { updatedMs: ms, id: parts[1] };
 }
 
 async function requestSlug(req) {

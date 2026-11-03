@@ -1021,6 +1021,112 @@ describe("Fake tool api", () => {
       expect(responseBody.items[0].content.attributes).to.eql({ name: "Alkoholfri dryck", parent: parentId });
       expect(fakeToolApi.peekContent(type, sectionId).attributes).to.have.property("description", "some text");
     });
+
+    [ "", "/article" ].forEach((typePrefix) => {
+      describe(`paging when called as ${typePrefix}/all`, () => {
+        async function addArticles(updatedTimes) {
+          const added = [];
+          for (const updated of updatedTimes) {
+            const articleId = randomUUID();
+            await fakeToolApi.addContent("article", articleId, { attributes: {}, updated }, true);
+            added.push({ id: articleId, updated });
+          }
+          return added;
+        }
+
+        async function getAll(params = {}) {
+          const response = await fetch(`${baseUrl}${typePrefix}/all?${new URLSearchParams(params)}`);
+          return { status: response.status, body: response.status === 200 ? await response.json() : undefined };
+        }
+
+        const ids = (items) => items.map((item) => item.id);
+
+        it("orders items by updated descending, then id ascending", async () => {
+          const [ newest, oldest, ...tied ] = await addArticles([
+            "2026-01-03T00:00:00.000Z",
+            "2026-01-01T00:00:00.000Z",
+            "2026-01-02T00:00:00.000Z",
+            "2026-01-02T00:00:00.000Z",
+            "2026-01-02T00:00:00.000Z",
+          ]);
+
+          const { body } = await getAll();
+          expect(ids(body.items)).to.eql([ newest.id, ...ids(tied).sort(), oldest.id ]);
+        });
+
+        it("returns a <updatedMs>|<id> nextCursor that the next page continues from", async () => {
+          await addArticles([
+            "2026-01-05T00:00:00.000Z",
+            "2026-01-04T00:00:00.000Z",
+            "2026-01-04T00:00:00.000Z",
+            "2026-01-03T00:00:00.000Z",
+            "2026-01-02T00:00:00.000Z",
+          ]);
+          const { body: all } = await getAll();
+
+          const page1 = await getAll({ size: 2 });
+          const second = page1.body.items[1];
+          expect(page1.body.nextCursor).to.eql(`${new Date(second.content.updated).getTime()}|${second.id}`);
+          expect(page1.body.next).to.contain(`cursor=${encodeURIComponent(page1.body.nextCursor)}`);
+          expect(page1.body.next).to.contain(`${typePrefix}/all`);
+
+          const page2 = await getAll({ size: 2, cursor: page1.body.nextCursor });
+          const page3 = await getAll({ size: 2, cursor: page2.body.nextCursor });
+
+          const pagedIds = [ page1, page2, page3 ].flatMap((page) => ids(page.body.items));
+          expect(pagedIds).to.eql(ids(all.items));
+          expect(page3.body.items).to.have.length(1);
+          expect(page3.body).to.not.have.property("nextCursor");
+          expect(page3.body).to.not.have.property("next");
+        });
+
+        it("returns a nextCursor when the final page is full", async () => {
+          await addArticles([ "2026-01-02T00:00:00.000Z", "2026-01-01T00:00:00.000Z" ]);
+
+          const page1 = await getAll({ size: 2 });
+          expect(page1.body.items).to.have.length(2);
+          expect(page1.body).to.have.property("nextCursor");
+
+          const page2 = await getAll({ size: 2, cursor: page1.body.nextCursor });
+          expect(page2.body.items).to.eql([]);
+          expect(page2.body).to.not.have.property("nextCursor");
+        });
+
+        it("defaults size to 500", async () => {
+          await addArticles(Array.from({ length: 501 }, (_, i) => new Date(Date.UTC(2026, 0, 1) + i).toISOString()));
+
+          const { body } = await getAll();
+          expect(body.items).to.have.length(500);
+          expect(body).to.have.property("nextCursor");
+        });
+
+        it("returns one page, not every item, for a cursor without size", async () => {
+          const [ first, ...rest ] = await addArticles([
+            "2026-01-03T00:00:00.000Z",
+            "2026-01-02T00:00:00.000Z",
+            "2026-01-01T00:00:00.000Z",
+          ]);
+
+          const page1 = await getAll({ size: 1 });
+          expect(ids(page1.body.items)).to.eql([ first.id ]);
+
+          const page2 = await getAll({ cursor: page1.body.nextCursor });
+          expect(ids(page2.body.items)).to.eql(ids(rest));
+        });
+
+        [ "0", "1001" ].forEach((size) => {
+          it(`returns 400 when size is ${size}`, async () => {
+            expect((await getAll({ size })).status).to.eql(400);
+          });
+        });
+
+        [ "bla", "a|b5c6b7d8-285c-4c8e-bfc4-a5661c9c95b2", "1661769936249|banan", "1" ].forEach((cursor) => {
+          it(`returns 400 for the malformed cursor ${cursor}`, async () => {
+            expect((await getAll({ cursor })).status).to.eql(400);
+          });
+        });
+      });
+    });
   });
 
   describe("GET /:type/autocomplete", () => {
