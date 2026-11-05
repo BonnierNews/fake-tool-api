@@ -67,11 +67,18 @@ export function initPubsub(listener) {
   pubSubListener = listener;
 }
 
-// Sets nock listeners and basic types (channel, publishingGroup, tag and article)
+let routeInterceptors = [];
+
+// Sets nock listeners and basic types (channel, publishingGroup, tag and article).
+// The routes are optional, so nock.isDone() and nock.pendingMocks() don't report
+// them. Calling it again replaces the routes from the previous call, also after
+// nock.cleanAll() has removed them.
 export function initNock(url) {
+  routeInterceptors.forEach((routeInterceptor) => nock.removeInterceptor(routeInterceptor));
+  routeInterceptors = [];
 
   baseUrl = url;
-  const scope = nock(url);
+  const scope = nock(url).persist();
 
   Object.keys(routes).forEach((route) => {
     const routeConfig = routes[route];
@@ -79,10 +86,11 @@ export function initNock(url) {
     Object.keys(routeConfig.handlers).forEach((verb) => {
       const handler = routeConfig.handlers[verb];
 
-      scope[verb](routeConfig.regexp)
+      const routeInterceptor = scope[verb](routeConfig.regexp)
         .query(true)
-        .reply(interceptable(handler, routeConfig))
-        .persist();
+        .optionally();
+      routeInterceptor.reply(interceptable(handler, routeConfig));
+      routeInterceptors.push(routeInterceptor);
     });
   });
 }
@@ -1111,6 +1119,7 @@ function getSignedUploadUrl(req) {
 
   nock(gcsBaseUrl)
     .intercept(filepath, "PUT")
+    .optionally()
     .reply(200);
 
   return [ 200, {

@@ -1,8 +1,12 @@
 import { randomUUID } from "crypto";
+import { createRequire } from "module";
 import { expect } from "chai";
+import nock from "nock";
 import fetch from "node-fetch";
 
 import * as fakeToolApi from "../index.js";
+
+const nockMajorVersion = Number(createRequire(import.meta.url)("nock/package.json").version.split(".")[0]);
 
 const baseUrl = "https://fake-tool-api-test";
 describe("Fake tool api", () => {
@@ -1366,6 +1370,66 @@ describe("Fake tool api", () => {
         expect(data.url).to.match(new RegExp(`^https://gcs-${kindOfFile}-bucket/.*/foo.mp4$`));
         res = await fetch(data.url, { method: "PUT" });
         expect(res.ok).to.be.true;
+      });
+
+      it(`should not report an unused upload url for ${kindOfFile} as pending`, async () => {
+        const res = await fetch(`${baseUrl}/${kindOfFile}/get-signed-upload-url?filename=foo.mp4`);
+        expect(res.ok).to.be.true;
+
+        expect(nock.pendingMocks()).to.eql([]);
+      });
+    });
+  });
+
+  describe("nock", () => {
+    it("should not report its routes as pending", async () => {
+      expect(nock.pendingMocks()).to.eql([]);
+      expect(nock.isDone()).to.be.true;
+
+      await fetch(`${baseUrl}/types`);
+
+      expect(nock.pendingMocks()).to.eql([]);
+      expect(nock.isDone()).to.be.true;
+    });
+
+    it("should answer again when initialized after nock.cleanAll()", async () => {
+      nock.cleanAll();
+      fakeToolApi.initNock(baseUrl);
+
+      const res = await fetch(`${baseUrl}/types`);
+      expect(res.status).to.equal(200);
+    });
+
+    it("should not register its routes twice when initialized again", () => {
+      // Start from the fake's routes only, without interceptors left by earlier tests
+      nock.cleanAll();
+      fakeToolApi.initNock(baseUrl);
+      const routeCount = nock.activeMocks().length;
+      expect(routeCount).to.be.above(0);
+
+      fakeToolApi.initNock(baseUrl);
+      expect(nock.activeMocks()).to.have.length(routeCount);
+
+      nock.cleanAll();
+      fakeToolApi.initNock(baseUrl);
+      expect(nock.activeMocks()).to.have.length(routeCount);
+    });
+
+    // nock 13 only intercepts the http module, which native fetch doesn't use
+    const describeNock14 = nockMajorVersion >= 14 ? describe : describe.skip;
+    describeNock14("with native fetch", () => {
+      it("should support PUT:ing and GET:ing a working copy", async () => {
+        const url = `${baseUrl}/article/${randomUUID()}/working-copy`;
+        const putRes = await globalThis.fetch(url, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: "Hello" }),
+        });
+        expect(putRes.ok).to.be.true;
+
+        const getRes = await globalThis.fetch(url);
+        expect(getRes.status).to.equal(200);
+        expect((await getRes.json()).name).to.equal("Hello");
       });
     });
   });
