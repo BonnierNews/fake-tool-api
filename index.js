@@ -4,6 +4,9 @@ import { pathToRegexp, match } from "path-to-regexp";
 
 const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89abcd][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+// Mirrors the signed headers Tool-API returns for external-files uploads; GCS rejects uploads without them
+const EXTERNAL_FILES_UPLOAD_HEADERS = { "x-goog-content-length-range": "0,209715200" };
+
 const routes = {
   externalFilesGetSignedUploadUrl: buildRoute("/external-files/get-signed-upload-url", { get: getSignedUploadUrl }),
   internalFilesGetSignedUploadUrl: buildRoute("/internal-files/get-signed-upload-url", { get: getSignedUploadUrl }),
@@ -1116,15 +1119,20 @@ function getSignedUploadUrl(req) {
   const filepath = `/${randomUUID()}/${filename}`;
 
   const gcsBaseUrl = `https://gcs-${kindOfFile}-bucket`;
+  const headers = kindOfFile === "external-files" ? EXTERNAL_FILES_UPLOAD_HEADERS : undefined;
 
-  nock(gcsBaseUrl)
+  const upload = nock(gcsBaseUrl)
     .intercept(filepath, "PUT")
-    .optionally()
-    .reply(200);
+    .optionally();
+  for (const [ name, value ] of Object.entries(headers || {})) {
+    upload.matchHeader(name, value);
+  }
+  upload.reply(200);
 
   return [ 200, {
     contentType: contentType || "application/octet-stream",
     filepath,
     url: `${gcsBaseUrl}${filepath}`,
+    ...(headers && { headers }),
   } ];
 }

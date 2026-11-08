@@ -1368,7 +1368,7 @@ describe("Fake tool api", () => {
         expect(data.filepath).to.match(/foo.mp4$/);
         expect(data).to.have.property("url");
         expect(data.url).to.match(new RegExp(`^https://gcs-${kindOfFile}-bucket/.*/foo.mp4$`));
-        res = await fetch(data.url, { method: "PUT" });
+        res = await fetch(data.url, { method: "PUT", headers: data.headers });
         expect(res.ok).to.be.true;
       });
 
@@ -1378,6 +1378,35 @@ describe("Fake tool api", () => {
 
         expect(nock.pendingMocks()).to.eql([]);
       });
+    });
+
+    it("should return the size limit header for external-files", async () => {
+      const res = await fetch(`${baseUrl}/external-files/get-signed-upload-url?filename=foo.pdf&contentType=application%2Fpdf`);
+      const data = await res.json();
+
+      expect(data).to.have.property("headers").that.eql({ "x-goog-content-length-range": "0,209715200" });
+    });
+
+    it("should reject an external-files upload without the returned headers", async () => {
+      const res = await fetch(`${baseUrl}/external-files/get-signed-upload-url?filename=foo.pdf&contentType=application%2Fpdf`);
+      const data = await res.json();
+
+      let error;
+      try {
+        await fetch(data.url, { method: "PUT" });
+      } catch (err) {
+        error = err;
+      }
+      expect(error?.message).to.match(/No match for request/);
+    });
+
+    it("should not require headers for internal-files uploads", async () => {
+      let res = await fetch(`${baseUrl}/internal-files/get-signed-upload-url?filename=foo.pdf&contentType=application%2Fpdf`);
+      const data = await res.json();
+
+      expect(data).to.not.have.property("headers");
+      res = await fetch(data.url, { method: "PUT" });
+      expect(res.ok).to.be.true;
     });
   });
 
