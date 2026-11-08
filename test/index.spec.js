@@ -1397,7 +1397,7 @@ describe("Fake tool api", () => {
       } catch (err) {
         error = err;
       }
-      expect(error?.message).to.match(/No match for request/);
+      expect(error?.code).to.equal("ERR_NOCK_NO_MATCH");
     });
 
     it("should not require headers for internal-files uploads", async () => {
