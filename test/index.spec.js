@@ -1368,16 +1368,61 @@ describe("Fake tool api", () => {
         expect(data.filepath).to.match(/foo.mp4$/);
         expect(data).to.have.property("url");
         expect(data.url).to.match(new RegExp(`^https://gcs-${kindOfFile}-bucket/.*/foo.mp4$`));
-        res = await fetch(data.url, { method: "PUT" });
+        res = await fetch(data.url, { method: "PUT", headers: data.headers });
         expect(res.ok).to.be.true;
       });
 
       it(`should not report an unused upload url for ${kindOfFile} as pending`, async () => {
-        const res = await fetch(`${baseUrl}/${kindOfFile}/get-signed-upload-url?filename=foo.mp4`);
+        const res = await fetch(`${baseUrl}/${kindOfFile}/get-signed-upload-url?filename=foo.mp4&contentType=video%2Fmp4`);
         expect(res.ok).to.be.true;
 
         expect(nock.pendingMocks()).to.eql([]);
       });
+    });
+
+    [ "text/html", undefined ].forEach((contentType) => {
+      it(`should reject external-files uploads with content type ${contentType || "missing"}`, async () => {
+        const query = contentType ? `&contentType=${encodeURIComponent(contentType)}` : "";
+        const res = await fetch(`${baseUrl}/external-files/get-signed-upload-url?filename=foo.html${query}`);
+
+        expect(res.status).to.equal(400);
+        expect(await res.text()).to.contain("contentType must be one of");
+      });
+    });
+
+    it("should allow any content type for internal-files", async () => {
+      const res = await fetch(`${baseUrl}/internal-files/get-signed-upload-url?filename=foo.html&contentType=text%2Fhtml`);
+
+      expect(res.ok).to.be.true;
+    });
+
+    it("should return the size limit header for external-files", async () => {
+      const res = await fetch(`${baseUrl}/external-files/get-signed-upload-url?filename=foo.pdf&contentType=application%2Fpdf`);
+      const data = await res.json();
+
+      expect(data).to.have.property("headers").that.eql({ "x-goog-content-length-range": "0,209715200" });
+    });
+
+    it("should reject an external-files upload without the returned headers", async () => {
+      const res = await fetch(`${baseUrl}/external-files/get-signed-upload-url?filename=foo.pdf&contentType=application%2Fpdf`);
+      const data = await res.json();
+
+      let error;
+      try {
+        await fetch(data.url, { method: "PUT" });
+      } catch (err) {
+        error = err;
+      }
+      expect(error?.code).to.equal("ERR_NOCK_NO_MATCH");
+    });
+
+    it("should not require headers for internal-files uploads", async () => {
+      let res = await fetch(`${baseUrl}/internal-files/get-signed-upload-url?filename=foo.pdf&contentType=application%2Fpdf`);
+      const data = await res.json();
+
+      expect(data).to.not.have.property("headers");
+      res = await fetch(data.url, { method: "PUT" });
+      expect(res.ok).to.be.true;
     });
   });
 
