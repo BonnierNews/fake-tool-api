@@ -1373,11 +1373,27 @@ describe("Fake tool api", () => {
       });
 
       it(`should not report an unused upload url for ${kindOfFile} as pending`, async () => {
-        const res = await fetch(`${baseUrl}/${kindOfFile}/get-signed-upload-url?filename=foo.mp4`);
+        const res = await fetch(`${baseUrl}/${kindOfFile}/get-signed-upload-url?filename=foo.mp4&contentType=video%2Fmp4`);
         expect(res.ok).to.be.true;
 
         expect(nock.pendingMocks()).to.eql([]);
       });
+    });
+
+    [ "text/html", undefined ].forEach((contentType) => {
+      it(`should reject external-files uploads with content type ${contentType || "missing"}`, async () => {
+        const query = contentType ? `&contentType=${encodeURIComponent(contentType)}` : "";
+        const res = await fetch(`${baseUrl}/external-files/get-signed-upload-url?filename=foo.html${query}`);
+
+        expect(res.status).to.equal(400);
+        expect(await res.text()).to.contain("contentType must be one of");
+      });
+    });
+
+    it("should allow any content type for internal-files", async () => {
+      const res = await fetch(`${baseUrl}/internal-files/get-signed-upload-url?filename=foo.html&contentType=text%2Fhtml`);
+
+      expect(res.ok).to.be.true;
     });
 
     it("should return the size limit header for external-files", async () => {

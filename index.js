@@ -6,6 +6,7 @@ const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89abcd][0-9a-f]{3}
 
 // Mirrors the signed headers Tool-API returns for external-files uploads; GCS rejects uploads without them
 const EXTERNAL_FILES_UPLOAD_HEADERS = { "x-goog-content-length-range": "0,209715200" };
+const EXTERNAL_FILES_ALLOWED_CONTENT_TYPES = [ "audio/mpeg", "application/pdf", "video/mp4", "image/jpeg", "image/png" ];
 
 const routes = {
   externalFilesGetSignedUploadUrl: buildRoute("/external-files/get-signed-upload-url", { get: getSignedUploadUrl }),
@@ -1117,6 +1118,10 @@ function getSignedUploadUrl(req) {
   const filename = req.searchParams.get("filename");
   const contentType = req.searchParams.get("contentType");
   const filepath = `/${randomUUID()}/${filename}`;
+
+  if (kindOfFile === "external-files" && !EXTERNAL_FILES_ALLOWED_CONTENT_TYPES.includes(contentType)) {
+    return [ 400, `contentType must be one of: ${EXTERNAL_FILES_ALLOWED_CONTENT_TYPES.join(", ")}` ];
+  }
 
   const gcsBaseUrl = `https://gcs-${kindOfFile}-bucket`;
   const headers = kindOfFile === "external-files" ? EXTERNAL_FILES_UPLOAD_HEADERS : undefined;
